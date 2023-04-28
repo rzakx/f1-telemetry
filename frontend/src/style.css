@@ -1,0 +1,204 @@
+* { margin: 0; box-sizing: border-box; color: #eee; font-family: 'Montserrat', sans-serif;  }
+body { background: url(./F1_22_12.png); background-position: center; background-size: cover; width: 100%; height: 100vh; display: flex; justify-content: center; align-items: center; }
+.screen { width: 100%; height: 100vh; padding: 50px 50px 50px 110px; background: rgba(20,20,20,0.9); }
+.middle { width: 95%; max-width: 1300px; min-width: 900px; height: 100%; margin: 0 auto;}
+h1.title { color: #eee; text-transform: uppercase; text-shadow: 2px 2px 6px #000; letter-spacing: 3px; padding-bottom: 5px; border-bottom: 2px solid crimson; margin-bottom: 5px; max-width: 300px;  }
+h3.title { color: #ccc; text-transform: uppercase; text-shadow: 2px 2px 5px #000; letter-spacing: 1px; margin-bottom: 40px; }
+#root { width: 100%; height: 100vh; display: flex; display: -webkit-flex; align-items: center; justify-content: center;}
+#roots { background: #0e0e0e; padding: 20px; box-shadow: 0 0 10px 0 #040404, inset 0 0 10px 0 #040404;}
+.przyciemnij { position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: -1; background: rgba(20,20,20,0.5);}
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+.glowne { box-shadow: 0 0 10px 0 #040404; margin: 3px 0; display: flex; gap: 30px; justify-content: space-between; min-width: 600px; background: #202020; padding: 20px; overflow: hidden;}
+.slupek { box-shadow: 0 0 10px 1px #111; }
+.slupekTlo { height: 150px; width: 50px; background: #666; position: relative; overflow: hidden; text-align: center; text-transform: uppercase; font-weight: bold; }
+.slupekSprzeglo, .slupekGaz, .slupekHamulec { top: 100%; left: 0; position: absolute; height: 100%; width: 100%; transform: translateY(0); transition: transform .1s; }
+.slupekTekst { font-weight: bold; line-height: 15px; text-align: center; font-size: 11px; text-transform: uppercase; background: #2a2a2a; padding: 4px 2px; }
+.slupekSprzeglo { background: orange; }
+.slupekGaz { background: green; }
+.slupekHamulec { background: crimson; }
+.slupki { display: flex; gap: 20px; }
+.inne { text-align: center; width: 180px;}
+.kierownica { text-align: center; }
+.kierownicaImg {  margin-top: 30px; width: 180px; height: 100px; background: url('./kierownica.webp'); background-size: contain; background-position: center; background-repeat: no-repeat; transition: rotate .1s; }
+hr { background: #eee; margin: 15px 0; }
+.minimapa { width: 410px; height: 210px; background: #111; border-radius: 5px; border: 3px solid #666; box-shadow: 0 0 10px 0 #111; }
+.naglowek { box-shadow: 0 0 10px 0 #040404; display: flex; align-items: center; padding: 10px; background: #161616; gap: 20px; font-weight: bold; justify-content: space-between;}
+.naglowek h1 { font-size: 1.1rem; text-align: center; }
+.naglowek h3 { font-size: 0.9rem; }
+.sektor { background: rgb(100,100,100); height: 100%; width: 120px; display: flex; align-items: center; justify-content: space-between; padding: 10px; text-align: center;}
+.sektorZly { background: rgb(182, 0, 36); }
+.sektorDobry { background: green; }
+.sektorNajlepszy { background: rgb(109, 0, 109); }
+.sektorOstroznie { background: goldenrod; }
+.sektor h1 { font-size: 1rem; margin-right: 5px; color: #161616;}
+.sektor h3 { font-size: 0.9rem; padding-left: 5px; border-left: 1px solid; color: #161616;}
+.sektory {  display: flex; flex-direction: row; gap: 5px;}
+.bolid { position: relative; width: 540px; height: 220px; background: url(./bolid.png); background-size: contain; background-repeat: no-repeat; background-position: center; }
+.bolidFL, .bolidFR, .bolidRL, .bolidRR { gap: 3px; text-align: center; flex-direction: column; display: flex; position: absolute; padding: 8px; background: #00000033; box-shadow: 0 0 10px 0 #111; border-radius: 15px; text-shadow: 1px 1px 3px #111; font-weight: 600;}
+.bolidFL { top:0; right: 14%;}
+.bolidFR { bottom: 0; right: 14%; flex-direction: column-reverse; }
+.bolidRL { top: 0; left: 11.5%; }
+.bolidRR { bottom: 0; left: 11.5%; flex-direction: column-reverse; }
+.bolidEngine { position: absolute; top: 50%; transform: translateY(-50%); left: 20%; font-weight: bold; color: #111; }
+.bolidIN { width: 18px; height: 18px; border-radius: 50%; border: 1px solid #111; background: dodgerblue; }
+.bolidOUT { width: 18px; height: 18px; border-radius: 50%; border: 2px solid dodgerblue;}
+.bolidRow { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.bolid svg { height: 22px; width: 22px; margin-right: -4px; }
+.bolid svg path { fill: rgb(153, 153, 153); }
+.logowanie {
+	display: flex;
+	width: 750px;
+	height: 400px;
+	background: #111;
+	box-shadow: 0 0 20px 1px #000;
+	z-index: 2;
+}
+.logowanieLewa {
+	width: 250px;
+	height: 100%;
+	display: flex;
+	padding: 40px;
+	background: #1c1c1c;
+}
+.logowanieLogo {
+	width: 100%;
+	background: url("./logoglowna.jpg");
+	background-size: contain;
+	background-position: center;
+	background-repeat: no-repeat;
+}
+.logowaniePrawa {
+	display: flex;
+	flex-grow: 1;
+	height: 100%;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	color: #ccc;
+	text-shadow: 1px 1px 3px #111;
+	padding: 40px;
+}
+.logowaniePrawa h1 {
+	text-transform: uppercase;
+	letter-spacing: 2px;
+}
+.logowaniePrawa h3{
+	letter-spacing: 1px;
+	font-weight: 400;
+	text-align: center;
+	font-size: 0.8rem;
+	width: 250px;
+	margin-top: 5px;
+	margin-bottom: 20px;
+}
+.logowaniePrawa a {
+	text-decoration: none;
+	color: white;
+	font-size: 0.7rem;
+	margin-top: 20px;
+	transition: color 0.4s ease;
+}
+.logowaniePrawa a:hover {
+	color: dodgerblue;
+}
+.logowaniePrawa h5 { color: crimson; animation: pokazSmooth 0.3s;}
+.logowaniePrawa input {
+	padding: 15px 10px;
+	font-size: 1.1rem;
+	background: #333;
+	color: #ccc;
+	margin: 20px 0 5px;
+	border: 2px solid transparent;
+	outline: none;
+	transition: all 0.4s ease;
+	box-shadow: -2px 2px 10px 1px #111;
+}
+.logowaniePrawa input:focus {
+	border-color: dodgerblue;
+}
+.logowaniePrawa input[type="submit"] {
+	background: crimson;
+	text-shadow: 1px 1px 3px black;
+	color: white;
+	font-size: 0.85rem;
+	font-weight: bold;
+	letter-spacing: 1px;
+	padding: 12px 8px;
+	min-width: 200px;
+	cursor: pointer;
+	text-align: center;
+	text-transform: uppercase;
+}
+.logowaniePrawa input[type="submit"]:focus {
+	border-color: transparent;
+}
+.logowaniePrawa input[type="submit"]:enabled:hover {
+	letter-spacing: 3px;
+	background: rgb(255, 187, 0);
+	background: #000;
+}
+.logowaniePrawa input[type="submit"]:disabled {
+	cursor:default;
+	opacity: 0.3;
+}
+header { position: fixed; z-index: 10;
+	left: 0; top: 0;
+	width: 60px;
+	height: 100vh; background: #181818;
+	color: #bbb;
+	transition: all .8s;
+	border-right: 1px solid #333;
+	box-shadow: 0 0 10px 1px #161616;
+	
+}
+header:hover { width: 200px; }
+nav { width: 100%; height: 100%; flex-direction: column; display: flex; justify-content: space-between; overflow: hidden;}
+nav ul { padding: 0; width: 100%; overflow: hidden; }
+nav li { list-style-type: none;
+	width: 200px;
+	text-decoration: none;
+	overflow: hidden;
+	border-bottom: 1px solid #333;
+}
+nav li a, nav button { display: flex; align-items: center; 
+	padding: 15px 20px; width: 100%;
+	text-decoration: none; color: inherit; overflow: hidden;
+	font-weight: 700; font-size: 1.05rem;
+	transition: all .4s ease; letter-spacing: 1px;
+	text-transform: uppercase;
+}
+nav button { width: 200px; overflow: hidden; background: transparent; outline: none; border: none; border-top: 1px solid #333;}
+nav li:first-child a { padding-top: 25px; }
+
+nav button:hover, nav li a:hover { background: #161616; color: #03a9f4; box-shadow: inset 0 0 5px 1px #040404; cursor: pointer; }
+nav button:hover svg, nav li a:hover svg { fill: #03a9f4; }
+nav button svg, nav li svg { width: 60px; text-align: center; font-size: 1.6rem; margin-left: -20px; }
+nav ul li a.active { color: #4cf709; }
+nav ul li a.active svg { fill: #1fd30d; }
+
+table { border-collapse: collapse; font-size: 1.05rem; width: 100%; max-height: calc(100% - 150px); }
+tr { border-left: 4px solid transparent; }
+tr th { border-bottom: 1px solid goldenrod; background: #282828; border-left: 1px solid #444; }
+tr th, tr td { padding: 18px 15px; text-align: center; vertical-align: middle; transition: all .4s ease;}
+tr:nth-child(odd) td { background: #121212; border-left: 1px solid #222; }
+tr:nth-child(even) td { background: #161616; border-left: 1px solid #333; }
+tr:hover td { background: #1C1C1C; color: #ddd; }
+th { cursor: pointer; }
+table img {
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 20px;
+	width: 45px;
+	height: 45px;
+}
+.tabelaOdnosnik { cursor: pointer; font-weight: 600; letter-spacing: 1px; text-decoration: none; 
+	text-transform: uppercase; font-size: 0.9rem; text-shadow: 1px 1px 3px #111; outline: none; 
+	border: none; padding: 8px 10px; background: dodgerblue;
+	color: #eee; text-align: center; transition: all .4s ease; }
+.tabelaOdnosnik:hover { background: goldenrod; }
+.danger { background: crimson; color: #eee; }
+.tabelaOdnosnik:first-child { margin-right: 10px;}
+.tabelaOdnosnik svg { margin-right: 5px; margin-top: -5px; font-size: 1rem; vertical-align: middle;}

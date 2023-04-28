@@ -1,12 +1,27 @@
 import gb from "../GlobalVars.js";
 import Nawigacja from "../Nawigacja.js";
+import Confirmation from "../Components/Confirmation.js";
 import { NavLink } from "react-router-dom";
 import Axios from "axios";
 import { useState } from "react";
 import { BsFillExclamationSquareFill, BsFillXSquareFill } from "react-icons/bs";
 
 export default function Sessions(props){
+    const [ showPopup, setShowPopup ] = useState(null);
     const [ sessionsData, setSessionsData ] = useState({data: null, checked: false, error: null});
+
+    const deleteSession = (id) => {
+        Axios.post(gb.backendIP+"deleteSession/"+localStorage.getItem("token")).then((res) => {
+            if(!res['blad']){
+                console.log("Usunieto");
+            } else {
+                console.log("Nieusunieto");
+            }
+        }).catch((er) => console.log(er, "nieusunieto sesji"));
+        setShowPopup(null);
+        setSessionsData({...sessionsData, data: sessionsData.data.filter((row) => row.session_id != id)});
+    }
+
     const checkSessions = () => {
         Axios.post(gb.backendIP+"sessions/"+localStorage.getItem("token")).then((r) => {
             if(r.data['data']){
@@ -23,7 +38,7 @@ export default function Sessions(props){
             return(
                 <>
                     <tr>
-                        <td colspan={6} rowspan={6}>{sessionsData.error}</td>
+                        <td colspan={6} rowSpan={6}>{sessionsData.error}</td>
                     </tr>
                 </>
             );
@@ -31,7 +46,7 @@ export default function Sessions(props){
             return(
                 sessionsData.data.map((row) => {
                     return(
-                        <tr rowspan="2">
+                        <tr key={row.session_id}>
                             <td>{row.session_id}</td>
                             <td>{gb.sessionType[row.type] || "Unknown"}</td>
                             <td>{gb.trackIds[row.track] || "Unknown"}</td>
@@ -39,7 +54,7 @@ export default function Sessions(props){
                             <td>{new Date(row.lastUpdate).toLocaleString('pl-PL', {day: '2-digit', month: 'long'})} {new Date(row.lastUpdate).toLocaleString('pl-PL', {hour: '2-digit', minute: '2-digit'})}</td>
                             <td>
                                 <NavLink className="tabelaOdnosnik" to={"/session/"+row.session_id}><BsFillExclamationSquareFill />Inspect</NavLink>
-                                <button className="tabelaOdnosnik danger"><BsFillXSquareFill />Delete</button>
+                                <button className="tabelaOdnosnik danger" onClick={() => setShowPopup(row.session_id)}><BsFillXSquareFill />Delete</button>
                             </td>
                         </tr>
                     );
@@ -67,6 +82,13 @@ export default function Sessions(props){
                     </table>
                 </div>
             </div>
+
+            { showPopup &&
+            <Confirmation 
+                message={`Wait! Do you really want to delete session with ID: ${showPopup}? This action is permanent!`}
+                cancelAction={() => setShowPopup(null)}
+                confirmAction={() => deleteSession(showPopup)}
+            />}
         </>
     );
 };

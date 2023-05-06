@@ -17,6 +17,7 @@
     "express.js": "^1.0.0",
     "mysql": "^2.18.1",
     "nodemailer": "^6.9.1",
+    "pako": "^2.1.0",
     "socket.io": "^4.6.1"
   }
 }

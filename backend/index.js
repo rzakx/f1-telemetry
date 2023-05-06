@@ -2,6 +2,7 @@ const udp = require("dgram");
 const mysql = require("mysql");
 const fs = require('fs');
 const zlib = require('zlib');
+const pako = require("pako");
 require('dotenv').config();
 const Parser = require("binary-parser").Parser;
 const serverUDP = udp.createSocket("udp4");
@@ -215,6 +216,20 @@ appHTTP.post("/sessions/:token", (req, res) => {
 			res.send({data: null});
 		}
 	});
+});
+appHTTP.post("/sessionDetails/", (req, res) => {
+	if(!req.body.requestUserId || !req.body.sessionId){
+		res.send({blad: "Not permitted."});
+		return;
+	}
+	db.query("SELECT * FROM `sesje` WHERE `session_id` = ? AND `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.body.sessionId, req.body.requestUserId], (err, r) => {
+		if(err) { console.log(err); }
+		if(r.length > 0){
+			res.send({data: r[0]['data'], track: r[0]['track'], type: r[0]['type'], lastUpdate: r[0]['lastUpdate'], car: r[0]['car']});
+		} else {
+			res.send({blad: "Not permitted."});
+		}
+	});
 })
 
 /* Parsery */
@@ -234,34 +249,6 @@ const interwalSesji = 60000; //milisekundy
 const iterujSesje = () => {
 	let doUsuniecia = [];
 	for(const sesja in sesje){
-		const adresIP = sesje[sesja].adresIP;
-		const lastUpdate = sesje[sesja].lastUpdate;
-		const car = sesje[sesja].carId;
-		const track = sesje[sesja].trackId;
-		const sessionType = sesje[sesja].sessionType;
-		console.log("Init baza dla", sesja);
-		fs.writeFile("zlib_sesja"+sesja+".txt", zlib.deflateSync(JSON.stringify(sesje[sesja].ramki)).toString('base64'), 'utf-8', (err) => {
-			if(err) console.log(err);
-			console.log("Zapisano");
-		});
-		db.query("SELECT `session_id` FROM `sesje` WHERE `session_id` = ?", [sesja], (er, r) => {
-			if(er) console.log(er);
-			if(r.length > 0) {
-				db.query("UPDATE `sesje` SET `user_id` = (SELECT `id` FROM `konta` WHERE `ip` = ?), `type` = ?, `track` = ?, `car` = ?, `lastUpdate` = ?, `data` = ?, `ip` = ? WHERE `session_id` = ?", [adresIP, sessionType, track, car, lastUpdate, zlib.deflateSync(JSON.stringify(sesje[sesja].ramki)).toString('base64'), adresIP, sesja], (er2, r2) => {
-					if(er2) console.log(er2);
-					if(r2.affectedRows > 0){
-						console.log("BAZA: Nadpisano sesje", sesja);
-					} else { console.log("BAZA ERROR UPDATE"); }
-				});
-			} else {
-				db.query("INSERT INTO `sesje` (`user_id`, `type`, `track`, `car`, `lastUpdate`, `session_id`, `ip`, `data`) VALUES ((SELECT `id` FROM `konta` WHERE `ip` = ?), ?, ?, ?, ?, ?, ?, ?)", [adresIP, sessionType, track, car, lastUpdate, sesja, adresIP, zlib.deflateSync(JSON.stringify(sesje[sesja].ramki)).toString('base64')], (er2, r2) => {
-					if(er2) console.log(er2);
-					if(r2.affectedRows > 0){
-						console.log("BAZA: Wpisano sesje", sesja);
-					} else { console.log("BAZA ERROR INSERT"); }
-				});
-			}
-		});
 		if((parseInt(sesje[sesja]['lastUpdate']) + (interwalSesji*5)) < Date.now() ){ //jesli ostatni update sesji byl 5 minut temu, usun z puli pamieci podrecznej
 			doUsuniecia.push(sesja);
 		}
@@ -270,6 +257,31 @@ const iterujSesje = () => {
 		console.log("Sesja", sesja, "porzucona, usuwam z tymczasowej pamieci.")
 		delete sesje[sesja];
 	});
+	for(const sesja in sesje){
+		const adresIP = sesje[sesja].adresIP;
+		const lastUpdate = sesje[sesja].lastUpdate;
+		const car = sesje[sesja].carId;
+		const track = sesje[sesja].trackId;
+		const sessionType = sesje[sesja].sessionType;
+		db.query("SELECT `session_id` FROM `sesje` WHERE `session_id` = ?", [sesja], (er, r) => {
+			if(er) console.log(er);
+			if(r.length > 0) {
+				db.query("UPDATE `sesje` SET `user_id` = (SELECT `id` FROM `konta` WHERE `ip` = ?), `type` = ?, `track` = ?, `car` = ?, `data` = ?, `ip` = ? WHERE `session_id` = ?", [adresIP, sessionType, track, car, pako.deflateRaw(JSON.stringify(sesje[sesja].ramki)).toString(), adresIP, sesja], (er2, r2) => {
+					if(er2) console.log(er2);
+					if(r2.affectedRows > 0){
+						console.log("BAZA: Nadpisano sesje", sesja);
+					} else { console.log("BAZA ERROR UPDATE"); }
+				});
+			} else {
+				db.query("INSERT INTO `sesje` (`user_id`, `type`, `track`, `car`, `session_id`, `ip`, `data`) VALUES ((SELECT `id` FROM `konta` WHERE `ip` = ?), ?, ?, ?, ?, ?, ?)", [adresIP, sessionType, track, car, sesja, adresIP, pako.deflateRaw(JSON.stringify(sesje[sesja].ramki)).toString()], (er2, r2) => {
+					if(er2) console.log(er2);
+					if(r2.affectedRows > 0){
+						console.log("BAZA: Wpisano sesje", sesja);
+					} else { console.log("BAZA ERROR INSERT"); }
+				});
+			}
+		});
+	}
 	console.log();
 };
 
@@ -383,17 +395,17 @@ const przechowujSesje = (id, ramka, typdanych, daneIn, adresIP) => {
 	if(!sesje[id]) sesje[id] = {adresIP: adresIP};
 	sesje[id]['lastUpdate'] = Date.now();
 
-	if(typdanych in singleRecord){
+	if(singleRecord.includes(typdanych)){
 		sesje[id][typdanych] = daneIn;
 		return;
-	}
-
-	if(!sesje[id]['ramki']) sesje[id]['ramki'] = {};
-	if(sesje[id]['ramki'][ramka]) {
-		sesje[id]['ramki'][ramka][typdanych] = daneIn;
 	} else {
-		sesje[id]['ramki'][ramka] = {};
-		sesje[id]['ramki'][ramka][typdanych] = daneIn;
+		if(!sesje[id]['ramki']) sesje[id]['ramki'] = {};
+		if(sesje[id]['ramki'][ramka]) {
+			sesje[id]['ramki'][ramka][typdanych] = daneIn;
+		} else {
+			sesje[id]['ramki'][ramka] = {};
+			sesje[id]['ramki'][ramka][typdanych] = daneIn;
+		}
 	}
 };
 

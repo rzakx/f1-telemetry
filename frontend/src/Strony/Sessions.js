@@ -48,9 +48,9 @@ export default function Sessions(props){
                     return(
                         <tr key={row.session_id}>
                             <td>{row.session_id}</td>
-                            <td>{gb.sessionType[row.type] || "Unknown"}</td>
-                            <td>{gb.trackIds[row.track] || "Unknown"}</td>
-                            <td>{gb.teamIds[row.car] || "Unknown"}</td>
+                            <td>{gb.sessionType[row.sessionType] || "Unknown"}</td>
+                            <td>{gb.trackIds[row.trackId] || "Unknown"}</td>
+                            <td>{gb.teamIds[row.carId] || "Unknown"}</td>
                             <td>{new Date(row.lastUpdate).toLocaleString('pl-PL', {day: '2-digit', month: 'long'})} {new Date(row.lastUpdate).toLocaleString('pl-PL', {hour: '2-digit', minute: '2-digit'})}</td>
                             <td>
                                 <NavLink className="tabelaOdnosnik" to={"/session/"+row.session_id}><BsFillExclamationSquareFill />Inspect</NavLink>

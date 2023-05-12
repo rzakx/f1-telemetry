@@ -80,12 +80,6 @@ export default function GlownyHUD() {
 		console.log("NOWE OKR");
 	};
 
-	const czasOkrazenia = (ms, okr) => {
-		if(!ms) return;
-		if(okr)	return(<>{(parseInt(ms/60000) < 10) ? "0"+parseInt(ms/60000) : parseInt(ms/60000)}:{(parseInt((ms/1000)%60) < 10) ? "0"+parseInt(ms/1000)%60 : parseInt(ms/1000)%60}:{(parseInt(ms%1000) < 100) ? ((parseInt(ms%1000) < 10) ? "00"+parseInt(ms%1000) : "0"+parseInt(ms%1000)) : parseInt(ms%1000)}</>);
-		else return(<>{(parseInt(ms/1000) < 10) ? "0"+parseInt(ms/1000) : parseInt(ms/1000)}:{(parseInt(ms%1000) < 100) ? ((parseInt(ms%1000) < 10) ? "00"+parseInt(ms%1000) : "0"+parseInt(ms%1000)) : parseInt(ms%1000)}</>);
-	};
-
 	return (
 		<>
 			<Nawigacja />
@@ -98,21 +92,21 @@ export default function GlownyHUD() {
 					</div>
 					<div>
 						<h1>LAP TIME</h1>
-						<h3>CURRENT: {czasOkrazenia(dane.daneOkrazenia.aktualneOkr, true) || "NULL"}</h3>
-						<h3>PREVIOUS: {czasOkrazenia(dane.daneOkrazenia.ostatnieOkr, true) || "NULL"}</h3>
+						<h3>CURRENT: {gb.lapTimeFormat(dane.daneOkrazenia.aktualneOkr, true) || "NULL"}</h3>
+						<h3>PREVIOUS: {gb.lapTimeFormat(dane.daneOkrazenia.ostatnieOkr, true) || "NULL"}</h3>
 					</div>
 					<div className="sektory">
 						<div className="sektor sektorZly">
 							<h1>S1</h1>
-							<h3>{dane.daneOkrazenia.sektor1 ? czasOkrazenia(dane.daneOkrazenia.sektor1, false) : czasOkrazenia(dane.daneOkrazenia.aktualneOkr, false)}</h3>
+							<h3>{dane.daneOkrazenia.sektor1 ? gb.lapTimeFormat(dane.daneOkrazenia.sektor1, false) : gb.lapTimeFormat(dane.daneOkrazenia.aktualneOkr, false)}</h3>
 						</div>
 						<div className="sektor">
 							<h1>S2</h1>
-							<h3>{dane.daneOkrazenia.sektor2 ? czasOkrazenia(dane.daneOkrazenia.sektor2, false) : (dane.daneOkrazenia.sektor1 ? czasOkrazenia(dane.daneOkrazenia.aktualneOkr - dane.daneOkrazenia.sektor1, false) : "") }</h3>
+							<h3>{dane.daneOkrazenia.sektor2 ? gb.lapTimeFormat(dane.daneOkrazenia.sektor2, false) : (dane.daneOkrazenia.sektor1 ? gb.lapTimeFormat(dane.daneOkrazenia.aktualneOkr - dane.daneOkrazenia.sektor1, false) : "") }</h3>
 						</div>
 						<div className="sektor">
 							<h1>S3</h1>
-							<h3>{(dane.daneOkrazenia.sektor1 && dane.daneOkrazenia.sektor2) ? czasOkrazenia((dane.daneOkrazenia.aktualneOkr - dane.daneOkrazenia.sektor1 - dane.daneOkrazenia.sektor2), false) : ""}</h3>
+							<h3>{(dane.daneOkrazenia.sektor1 && dane.daneOkrazenia.sektor2) ? gb.lapTimeFormat((dane.daneOkrazenia.aktualneOkr - dane.daneOkrazenia.sektor1 - dane.daneOkrazenia.sektor2), false) : ""}</h3>
 						</div>
 					</div>
 				</div>

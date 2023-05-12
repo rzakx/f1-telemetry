@@ -1,8 +1,7 @@
 const udp = require("dgram");
 const mysql = require("mysql");
 const fs = require('fs');
-const zlib = require('zlib');
-const pako = require("pako");
+const compression = require('compression');
 require('dotenv').config();
 const Parser = require("binary-parser").Parser;
 const serverUDP = udp.createSocket("udp4");
@@ -42,6 +41,7 @@ const smtp = nodemailer.createTransport({
 const register_available = true;
 
 appHTTP.use(express.json());
+appHTTP.use(compression());
 appHTTP.use(cors());
 
 appHTTP.post("/login", (req, res) => {
@@ -205,7 +205,7 @@ appHTTP.post("/sessions/:token", (req, res) => {
 		res.send({error: "No token"});
 		return;
 	}
-	db.query("SELECT `type`,`track`,`session_id`,`lastUpdate`,`car` FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?) ORDER BY `lastUpdate` DESC", [req.params.token], (err, r) => {
+	db.query("SELECT `sessionType`,`trackId`,`session_id`,`lastUpdate`,`carId` FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?) ORDER BY `lastUpdate` DESC", [req.params.token], (err, r) => {
 		if(r.length > 0){
 			let tmp = [];
 			r.forEach((row) => {
@@ -225,7 +225,18 @@ appHTTP.post("/sessionDetails/", (req, res) => {
 	db.query("SELECT * FROM `sesje` WHERE `session_id` = ? AND `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.body.sessionId, req.body.requestUserId], (err, r) => {
 		if(err) { console.log(err); }
 		if(r.length > 0){
-			res.send({data: r[0]['data'], track: r[0]['track'], type: r[0]['type'], lastUpdate: r[0]['lastUpdate'], car: r[0]['car']});
+			db.query("SELECT * FROM `frames` WHERE `session_id` = ?", [req.body.sessionId], (err2, r2) => {
+				if(r2.length > 0){
+					let tmpObj = {};
+					r2.map((row) => {
+						if(!tmpObj[row.frame]) tmpObj[row.frame] = {};
+						tmpObj[row.frame][row.data_type] = JSON.parse(row.data);
+					});
+					res.send({data: tmpObj, track: r[0]['trackId'], type: r[0]['sessionType'], lastUpdate: r[0]['lastUpdate'], car: r[0]['carId']});
+				} else {
+					res.send({data: null, track: r[0]['trackId'], type: r[0]['sessionType'], lastUpdate: r[0]['lastUpdate'], car: r[0]['carId']});
+				}
+			});
 		} else {
 			res.send({blad: "Not permitted."});
 		}
@@ -242,50 +253,6 @@ const carMotionDataParser = new Parser().endianness("little").floatle("m_worldPo
 const lapDataParser = new Parser().endianness("little").uint32le("m_lastLapTimeInMS").uint32le("m_currentLapTimeInMS").uint16le("m_sector1TimeInMS").uint16le("m_sector2TimeInMS").floatle("m_lapDistance").floatle("m_totalDistance").floatle("m_safetyCarDelta").uint8("m_carPosition").uint8("m_currentLapNum").uint8("m_pitStatus").uint8("m_numPitStops").uint8("m_sector").uint8("m_currentLapInvalid").uint8("m_penalties").uint8("m_warnings").uint8("m_numUnservedDriveThroughPens").uint8("m_numUnservedStopGoPens").uint8("m_gridPosition").uint8("m_driverStatus").uint8("m_resultStatus").uint8("m_pitLaneTimerActive").uint16le("m_pitLaneTimeInLaneInMS").uint16le("m_pitStopTimerInMS").uint8("m_pitStopShouldServePen");
 const MarshalZoneParser = new Parser().endianness("little").floatle('m_zoneStart').int8('m_zoneFlag');
 const WeatherForecastSampleParser = new Parser().endianness("little").uint8('m_sessionType').uint8('m_timeOffset').uint8('m_weather').int8('m_trackTemperature').int8('m_trackTemperatureChange').int8('m_airTemperature').int8('m_airTemperatureChange').uint8('m_rainPercentage');
-
-/* Przechowywane ostatnie dane */
-let sesje = {};
-const interwalSesji = 60000; //milisekundy
-const iterujSesje = () => {
-	let doUsuniecia = [];
-	for(const sesja in sesje){
-		if((parseInt(sesje[sesja]['lastUpdate']) + (interwalSesji*5)) < Date.now() ){ //jesli ostatni update sesji byl 5 minut temu, usun z puli pamieci podrecznej
-			doUsuniecia.push(sesja);
-		}
-	}
-	doUsuniecia.forEach((sesja) => {
-		console.log("Sesja", sesja, "porzucona, usuwam z tymczasowej pamieci.")
-		delete sesje[sesja];
-	});
-	for(const sesja in sesje){
-		const adresIP = sesje[sesja].adresIP;
-		const lastUpdate = sesje[sesja].lastUpdate;
-		const car = sesje[sesja].carId;
-		const track = sesje[sesja].trackId;
-		const sessionType = sesje[sesja].sessionType;
-		db.query("SELECT `session_id` FROM `sesje` WHERE `session_id` = ?", [sesja], (er, r) => {
-			if(er) console.log(er);
-			if(r.length > 0) {
-				db.query("UPDATE `sesje` SET `user_id` = (SELECT `id` FROM `konta` WHERE `ip` = ?), `type` = ?, `track` = ?, `car` = ?, `data` = ?, `ip` = ? WHERE `session_id` = ?", [adresIP, sessionType, track, car, pako.deflateRaw(JSON.stringify(sesje[sesja].ramki)).toString(), adresIP, sesja], (er2, r2) => {
-					if(er2) console.log(er2);
-					if(r2.affectedRows > 0){
-						console.log("BAZA: Nadpisano sesje", sesja);
-					} else { console.log("BAZA ERROR UPDATE"); }
-				});
-			} else {
-				db.query("INSERT INTO `sesje` (`user_id`, `type`, `track`, `car`, `session_id`, `ip`, `data`) VALUES ((SELECT `id` FROM `konta` WHERE `ip` = ?), ?, ?, ?, ?, ?, ?)", [adresIP, sessionType, track, car, sesja, adresIP, pako.deflateRaw(JSON.stringify(sesje[sesja].ramki)).toString()], (er2, r2) => {
-					if(er2) console.log(er2);
-					if(r2.affectedRows > 0){
-						console.log("BAZA: Wpisano sesje", sesja);
-					} else { console.log("BAZA ERROR INSERT"); }
-				});
-			}
-		});
-	}
-	console.log();
-};
-
-setInterval(iterujSesje, interwalSesji);
 
 //zrobic strukture zeby kazdy gracz mial wlasne dane w czasie rzeczywistym, aktualnie jeden kierowca bedzie nadpisywal GlownyHUD frontendu kazdemu uzytkownikowi
 let daneMotion = {
@@ -392,22 +359,33 @@ let daneOkrazenia = {
 
 const singleRecord = ["carId", "trackId", "sessionType"];
 const przechowujSesje = (id, ramka, typdanych, daneIn, adresIP) => {
-	if(!sesje[id]) sesje[id] = {adresIP: adresIP};
-	sesje[id]['lastUpdate'] = Date.now();
-
 	if(singleRecord.includes(typdanych)){
-		sesje[id][typdanych] = daneIn;
-		return;
+		db.query("SELECT COUNT(*) FROM sesje WHERE session_id = ?", [id], (er, r) => {
+			if(r.length > 0){
+				db.query(`UPDATE sesje SET ${typdanych} = ?, lastUpdate = ? WHERE session_id = ?`, [daneIn, null, id], (er2, r2) => {
+					if(er2) console.log(er2);
+					if(r2.affectedRows < 1){
+						console.log("Nie nadpisano overallu sesji", id);
+					}
+				})
+			} else {
+				db.query(`INSERT INTO sesje (session_id, ip, ${typdanych}, user_id) VALUES (?, ?, ?, (SELECT id FROM konta WHERE ip = ?))`, [id, adresIP, daneIn, adresIP], (er2, r2) => {
+					if(er2) console.log(er2);
+					if(r2.affectedRows < 1){
+						console.log("Niedodano sesji", id);
+					}
+				})
+			}
+		})
 	} else {
-		if(!sesje[id]['ramki']) sesje[id]['ramki'] = {};
-		if(sesje[id]['ramki'][ramka]) {
-			sesje[id]['ramki'][ramka][typdanych] = daneIn;
-		} else {
-			sesje[id]['ramki'][ramka] = {};
-			sesje[id]['ramki'][ramka][typdanych] = daneIn;
-		}
+		db.query("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [id, ramka, typdanych, JSON.stringify(daneIn)], (er, r) => {
+			if(er) console.log(er);
+			if(r.affectedRows < 1){
+				console.log("Nie zapisano ramki", ramka, "sesji", id);
+			}
+		})
 	}
-};
+}
 
 serverUDP.on("error", (er) => {
 	console.log("Error: ", er);

@@ -94,6 +94,11 @@ const GlobalVars = {
         "Retired", 
         "Black flag timer"
     ],
-    sessionType: ["Unknown", "Practice 1", "Practice 2", "Practice 3", "Short Practice", "Qualification 1", "Qualification 2", "Qualification 3", "Short Race", "OSQ", "Race", "Race 2", "Race 3", "Time Trial"]
+    sessionType: ["Unknown", "Practice 1", "Practice 2", "Practice 3", "Short Practice", "Qualification 1", "Qualification 2", "Qualification 3", "Short Race", "OSQ", "Race", "Race 2", "Race 3", "Time Trial"],
+    lapTimeFormat: (ms, okr) => {
+		if(!ms) return;
+		if(okr)	return(<>{(parseInt(ms/60000) < 10) ? "0"+parseInt(ms/60000) : parseInt(ms/60000)}:{(parseInt((ms/1000)%60) < 10) ? "0"+parseInt(ms/1000)%60 : parseInt(ms/1000)%60}.{(parseInt(ms%1000) < 100) ? ((parseInt(ms%1000) < 10) ? "00"+parseInt(ms%1000) : "0"+parseInt(ms%1000)) : parseInt(ms%1000)}</>);
+		else return(<>{(parseInt(ms/1000) < 10) ? "0"+parseInt(ms/1000) : parseInt(ms/1000)}.{(parseInt(ms%1000) < 100) ? ((parseInt(ms%1000) < 10) ? "00"+parseInt(ms%1000) : "0"+parseInt(ms%1000)) : parseInt(ms%1000)}</>);
+	}
 };
 export default GlobalVars;

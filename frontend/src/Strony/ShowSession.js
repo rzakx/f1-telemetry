@@ -2,7 +2,6 @@ import gb from "../GlobalVars.js";
 import Nawigacja from "../Nawigacja.js";
 import { NavLink, useParams } from "react-router-dom";
 import Axios from "axios";
-const pako = require("pako");
 import { useState } from "react";
 import LoadingIndicator from "../Components/LoadingIndicator.js";
 
@@ -51,6 +50,7 @@ export default function ShowSessions(props){
                         laps[lapNumber]['f'] = [parseInt(frame)];
                     } else {
                         laps[lapNumber]['f'].push(parseInt(frame));
+                        laps[lapNumber]['maxF'] = parseInt(frame);
                     }
                 }
             }
@@ -60,31 +60,38 @@ export default function ShowSessions(props){
             const minFrame = Math.min(...laps[lap]['f']);
             laps[lap]['maxF'] = maxFrame;
             laps[lap]['minF'] = minFrame;
-            lapTimes[lap] = session.data[maxFrame]["daneOkrazenia"]["aktualneOkr"];
             lapS1[lap] = session.data[maxFrame]["daneOkrazenia"]["sektor1"];
             lapS2[lap] = session.data[maxFrame]["daneOkrazenia"]["sektor2"];
+            lapTimes[lap] = session.data[maxFrame]["daneOkrazenia"]["aktualneOkr"];
+            if(lapTimes[lap-1]) lapTimes[lap-1] = session.data[maxFrame]["daneOkrazenia"]["ostatnieOkr"];
         }
         return(
             <div className="showSessionOverall">
                 <div className="showSessionOverallInfo">
                     <span>Session {sessionId}</span>
                     <span>{new Date(session.lastUpdate).toLocaleString('pl-PL', {day: '2-digit', month: 'long'})} {new Date(session.lastUpdate).toLocaleString('pl-PL', {hour: '2-digit', minute: '2-digit'})}</span>
-                    <span>Track: {gb.trackIds[session.track]}</span>
-                    <span>Vehicle: {gb.teamIds[session.car]}</span>
+                    <br />
+                    <span>{gb.sessionType[session.type]}</span>
+                    <span>{gb.trackIds[session.track]}</span>
+
+                    <br />
+                    <img src={"/images/"+gb.carImages[session.car]} />
+                    <span>{gb.teamIds[session.car]}</span>
                 </div>
-                <div className="showSessionOveralLaps">
-                    <h3>Lap times in session</h3>
+                <div className="showSessionOverallLaps">
                     <table>
-                        <thead><tr><th>Lap</th><th>Tire type</th><th>Lap Time</th><th>Sector 1</th><th>Sector 2</th><th>Sector 3</th></tr></thead>
+                        <thead><tr><th>Lap</th><th>Tire type</th><th>Lap Time</th><th>Sector 1</th><th>Sector 2</th><th>Sector 3</th><th>Action</th></tr></thead>
                         <tbody>
                     { lapTimes.length && lapTimes.map((time, okr) => {
+                        const lastLapData = Object.entries(session.data).filter((v, k) => v[0] == laps[okr].maxF)[0][1];
                         return <tr key={"okr"+okr}>
                                 <td>{okr}</td>
-                                <td>g</td>
+                                <td>{gb.typOponWizualnie[ lastLapData.statusPojazdu.typOponWizualne ]}</td>
                                 <td>{gb.lapTimeFormat(time, true)}</td>
                                 <td>{gb.lapTimeFormat(lapS1[okr] || time , false)}</td>
                                 <td>{lapS1[okr] ? gb.lapTimeFormat(lapS2[okr], false) : "-"}</td>
                                 <td>{(lapS1[okr] && lapS2[okr]) ? gb.lapTimeFormat(time - lapS1[okr] - lapS2[okr], false) : "-"}</td>
+                                <td><button className="tabelaOdnosnik" onClick={() => console.log(`Okrazenie ${okr}`, lastLapData)}>Test</button></td>
                             </tr>
                     })}
                     </tbody>

@@ -360,30 +360,45 @@ let daneOkrazenia = {
 const singleRecord = ["carId", "trackId", "sessionType"];
 const przechowujSesje = (id, ramka, typdanych, daneIn, adresIP) => {
 	if(singleRecord.includes(typdanych)){
-		db.query("SELECT COUNT(*) FROM sesje WHERE session_id = ?", [id], (er, r) => {
+		db.query("SELECT * FROM `sesje` WHERE `session_id` = ?", [id], (er, r) => {
 			if(r.length > 0){
 				db.query(`UPDATE sesje SET ${typdanych} = ?, lastUpdate = ? WHERE session_id = ?`, [daneIn, null, id], (er2, r2) => {
-					if(er2) console.log(er2);
-					if(r2.affectedRows < 1){
-						console.log("Nie nadpisano overallu sesji", id);
+					if(!er2){
+						if(r2.affectedRows < 1){
+							console.log("Nie nadpisano overallu sesji", id);
+						}
 					}
-				})
+				});
 			} else {
 				db.query(`INSERT INTO sesje (session_id, ip, ${typdanych}, user_id) VALUES (?, ?, ?, (SELECT id FROM konta WHERE ip = ?))`, [id, adresIP, daneIn, adresIP], (er2, r2) => {
-					if(er2) console.log(er2);
-					if(r2.affectedRows < 1){
-						console.log("Niedodano sesji", id);
+					if(!er2){
+						if(r2.affectedRows < 1){
+							console.log("Niedodano sesji", id);
+						}
 					}
-				})
+				});
 			}
 		})
 	} else {
-		db.query("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [id, ramka, typdanych, JSON.stringify(daneIn)], (er, r) => {
-			if(er) console.log(er);
-			if(r.affectedRows < 1){
-				console.log("Nie zapisano ramki", ramka, "sesji", id);
+		db.query("SELECT * FROM frames WHERE session_id = ? AND frame = ? AND data_type = ?", [id, ramka, typdanych], (er, r) => {
+			if(r.length > 0){
+				db.query("UPDATE frames SET data = ? WHERE session_id = ? AND frame = ? AND data_type = ?", [JSON.stringify(daneIn), id, ramka, typdanych], (er2, r2) => {
+					if(!er2){
+						if(r2.affectedRows < 1){
+							console.log("Nie nadpisano ramki", ramka, "sesji", id);
+						}
+					}
+				})
+			} else {
+				db.query("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [id, ramka, typdanych, JSON.stringify(daneIn)], (er2, r2) => {
+					if(!er2){
+						if(r2.affectedRows < 1){
+							console.log("Nie zapisano ramki", ramka, "sesji", id);
+						}
+					}
+				})
 			}
-		})
+		});
 	}
 }
 

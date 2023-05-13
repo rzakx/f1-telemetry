@@ -67,6 +67,18 @@ const GlobalVars = {
         116: 'Trident ‘21',
         117: 'Mercedes AMG GT Black Series'
     },
+    carImages: {
+        0: 'mercedes.png',
+        1: 'ferrari.png',
+        2: 'redbull.png',
+        3: 'williams.png',
+        4: 'astonmartin.png',
+        5: 'alpine.png',
+        6: 'alphatauri.png',
+        7: 'haas.png',
+        8: 'mclaren.png',
+        9: 'alfaromeo.png'
+    },
     trackIds: ["Melbourne (Australia)", "Paul Ricard", "Shanghai", "Sakhir (Bahrain)", "Catalunya (Spain)",
             "Monaco", "Montreal", "Silverstone (UK)", "Hockenheim (Germany)", "Hungaroring (Hungary)", "Spa (Belgium)",
             "Monza (Italy)", "Singapore","Suzuka (Japan)", "Abu Dhabi", "Texas (USA)", "Brazil", "Austria",

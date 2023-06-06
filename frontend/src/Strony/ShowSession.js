@@ -7,6 +7,7 @@ import LoadingIndicator from "../Components/LoadingIndicator.js";
 
 export default function ShowSessions(props){
     const {sessionId} = useParams();
+    const [lapSelected, setLapSelected] = useState(null);
     const [session, setSession] = useState({data: null, checkOwn: false, isChecking: false});
     if(!sessionId){
         window.location.href = "/sessions";
@@ -32,6 +33,11 @@ export default function ShowSessions(props){
             console.log("Session details: ERROR | ", err.message);
             window.location.href = "/sessions";
         })
+    };
+
+    const selLap = (arr) => {
+        console.log(arr);
+        setLapSelected(arr);
     };
 
     const overallReady = () => {
@@ -91,7 +97,7 @@ export default function ShowSessions(props){
                                 <td>{gb.lapTimeFormat(lapS1[okr] || time , false)}</td>
                                 <td>{lapS1[okr] ? gb.lapTimeFormat(lapS2[okr], false) : "-"}</td>
                                 <td>{(lapS1[okr] && lapS2[okr]) ? gb.lapTimeFormat(time - lapS1[okr] - lapS2[okr], false) : "-"}</td>
-                                <td><button className="tabelaOdnosnik" onClick={() => console.log(`Okrazenie ${okr}`, lastLapData)}>Test</button></td>
+                                <td><button className="tabelaOdnosnik" onClick={() => selLap(laps[okr])}>Select</button></td>
                             </tr>
                     })}
                     </tbody>

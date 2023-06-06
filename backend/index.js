@@ -2,6 +2,8 @@ const udp = require("dgram");
 const mysql = require("mysql");
 const fs = require('fs');
 const compression = require('compression');
+const zlib = require("zlib");
+const cache = require('node-cache');
 require('dotenv').config();
 const Parser = require("binary-parser").Parser;
 const serverUDP = udp.createSocket("udp4");
@@ -38,7 +40,7 @@ const smtp = nodemailer.createTransport({
 		pass: process.env.EMAIL_PASS
 	}
 });
-const register_available = true;
+const register_available = false;
 
 appHTTP.use(express.json());
 appHTTP.use(compression());
@@ -230,7 +232,7 @@ appHTTP.post("/sessionDetails/", (req, res) => {
 					let tmpObj = {};
 					r2.map((row) => {
 						if(!tmpObj[row.frame]) tmpObj[row.frame] = {};
-						tmpObj[row.frame][row.data_type] = JSON.parse(row.data);
+						tmpObj[row.frame][row.data_type] = JSON.parse(zlib.inflateRawSync(Buffer.from(row.data, 'base64')).toString());
 					});
 					res.send({data: tmpObj, track: r[0]['trackId'], type: r[0]['sessionType'], lastUpdate: r[0]['lastUpdate'], car: r[0]['carId']});
 				} else {
@@ -357,50 +359,54 @@ let daneOkrazenia = {
 	anulowaneOkrazenie: 0,
 };
 
+/* główne dane są wysyłane cały czas co jakiś czas z jakąś cząsteczką informacji,
+a wystarczy nam około 5 pakietów by miec kompletne główne dane, reszta jest zbędna i tylko obciąża baze danych INSERT/UPDATE */
+let temporarySessionIds = { };
 const singleRecord = ["carId", "trackId", "sessionType"];
-const przechowujSesje = (id, ramka, typdanych, daneIn, adresIP) => {
+const bufforData = new cache();
+const przechowujSesje = async (id, ramka, typdanych, daneIn, adresIP) => {
+	bufforData.set(`${id}-${ramka}-${typdanych}-${adresIP}`, [id, ramka, typdanych, daneIn, adresIP]);
+};
+
+const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 	if(singleRecord.includes(typdanych)){
-		db.query("SELECT * FROM `sesje` WHERE `session_id` = ?", [id], (er, r) => {
-			if(r.length > 0){
-				db.query(`UPDATE sesje SET ${typdanych} = ?, lastUpdate = ? WHERE session_id = ?`, [daneIn, null, id], (er2, r2) => {
-					if(!er2){
-						if(r2.affectedRows < 1){
-							console.log("Nie nadpisano overallu sesji", id);
-						}
-					}
-				});
-			} else {
-				db.query(`INSERT INTO sesje (session_id, ip, ${typdanych}, user_id) VALUES (?, ?, ?, (SELECT id FROM konta WHERE ip = ?))`, [id, adresIP, daneIn, adresIP], (er2, r2) => {
-					if(!er2){
-						if(r2.affectedRows < 1){
-							console.log("Niedodano sesji", id);
-						}
-					}
-				});
-			}
-		})
-	} else {
-		db.query("SELECT * FROM frames WHERE session_id = ? AND frame = ? AND data_type = ?", [id, ramka, typdanych], (er, r) => {
-			if(r.length > 0){
-				db.query("UPDATE frames SET data = ? WHERE session_id = ? AND frame = ? AND data_type = ?", [JSON.stringify(daneIn), id, ramka, typdanych], (er2, r2) => {
-					if(!er2){
-						if(r2.affectedRows < 1){
-							console.log("Nie nadpisano ramki", ramka, "sesji", id);
-						}
-					}
-				})
-			} else {
-				db.query("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [id, ramka, typdanych, JSON.stringify(daneIn)], (er2, r2) => {
-					if(!er2){
-						if(r2.affectedRows < 1){
-							console.log("Nie zapisano ramki", ramka, "sesji", id);
-						}
-					}
-				})
+		if(temporarySessionIds[id]) { temporarySessionIds[id] = temporarySessionIds[id] + 1; }
+		else { temporarySessionIds[id] = 1; }
+		if(temporarySessionIds[id] > 10){
+			return;
+		}
+
+		db.query(`INSERT INTO sesje (session_id, ip, ${typdanych}, user_id) VALUES (?, ?, ?, (SELECT id FROM konta WHERE ip = ?)) ON DUPLICATE KEY UPDATE ${typdanych} = ?`, [id, adresIP, daneIn, adresIP, daneIn], (er2, r2) => {
+			if(!er2){
+				if(r2.affectedRows < 1){
+					console.log("Niedodano sesji", id);
+				}
 			}
 		});
+	} else {
+		/* TODO: DODAĆ TIMESTAMP DO RAMEK I POZNIEJ USUWAC DUPLIKATY O STARSZEJ DACIE */
+		db.query("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [id, ramka, typdanych, zlib.deflateRawSync(JSON.stringify(daneIn)).toString('base64')], (er2, r2) => {
+			if(!er2){
+				if(r2.affectedRows < 1){
+					console.log("Nie zapisano ramki", ramka, "sesji", id);
+				}
+			} else { console.log("BŁĄD DODAWANIA RAMKI", er2);}
+		});
 	}
-}
+};
+
+// "OCZYSZCZANIE" CACHE, (DANE LĄDUJĄ POWOLUTKU DO BAZY DANYCH)
+setInterval(() => {
+	let queryLimit = 2500; //limit operacji bazy danych w interwale
+	let x = 0;
+	bufforData.keys() && bufforData.keys().map((key) => {
+		if(x >= queryLimit) return;
+		const v = bufforData.take(key);
+		zapiszDaneSesji(v[0], v[1], v[2], v[3], v[4]);
+		x = x + 1;
+	});
+	console.log("Zapisano", x, " danych z buffora");
+}, 1 * 60 * 1000); //1 minuta
 
 serverUDP.on("error", (er) => {
 	console.log("Error: ", er);

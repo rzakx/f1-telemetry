@@ -7,7 +7,8 @@ import LoadingIndicator from "../Components/LoadingIndicator.js";
 
 export default function ShowSessions(props){
     const {sessionId} = useParams();
-    const [lapSelected, setLapSelected] = useState(null);
+    const [chartsLap, setChartsLap ] = useState(null);
+    const [refLapId, setRefLapId] = useState(localStorage.getItem("referenceLap") ? JSON.parse(localStorage.getItem("referenceLap")).id : null);
     const [session, setSession] = useState({data: null, checkOwn: false, isChecking: false});
     if(!sessionId){
         window.location.href = "/sessions";
@@ -35,9 +36,9 @@ export default function ShowSessions(props){
         })
     };
 
-    const selLap = (arr) => {
-        console.log(arr);
-        setLapSelected(arr);
+    const linkRef = (lap, lapData) => {
+        localStorage.setItem("referenceLap", JSON.stringify({id: `${sessionId}-lap${lap}`, data: lapData}) );
+        setRefLapId(`${sessionId}-lap${lap}`);
     };
 
     const overallReady = () => {
@@ -79,7 +80,7 @@ export default function ShowSessions(props){
                     <br />
                     <span>{gb.sessionType[session.type]}</span>
                     <span>{gb.trackIds[session.track]}</span>
-
+                    <img src={"/images/"+gb.trackMaps[session.track]} />
                     <br />
                     <img src={"/images/"+gb.carImages[session.car]} />
                     <span>{gb.teamIds[session.car]}</span>
@@ -97,12 +98,47 @@ export default function ShowSessions(props){
                                 <td>{gb.lapTimeFormat(lapS1[okr] || time , false)}</td>
                                 <td>{lapS1[okr] ? gb.lapTimeFormat(lapS2[okr], false) : "-"}</td>
                                 <td>{(lapS1[okr] && lapS2[okr]) ? gb.lapTimeFormat(time - lapS1[okr] - lapS2[okr], false) : "-"}</td>
-                                <td><button className="tabelaOdnosnik" onClick={() => selLap(laps[okr])}>Select</button></td>
+                                <td>
+                                    <button className="tabelaOdnosnik" onClick={() => setChartsLap(laps[okr])}>Charts</button>
+                                    {(refLapId ? (
+                                        (refLapId == (sessionId + "-lap" + okr))
+                                        ? <button className="tabelaOdnosnik danger" onClick={ () => {
+                                            localStorage.removeItem("referenceLap");
+                                            setRefLapId(null);
+                                        }}>Unlink Ref</button>
+                                        : <button className="tabelaOdnosnik danger">Compare</button>
+                                    )
+                                    :
+                                    <button className="tabelaOdnosnik danger" onClick={ () => linkRef(okr, laps[okr]) }>Link Ref</button>
+                                    )}
+                                </td>
                             </tr>
                     })}
                     </tbody>
                     </table>
+                    <div className="filler" />
                 </div>
+            </div>
+        );
+    };
+
+    const showCharts = () =>{
+        return(
+            <div className="lapCharts">
+                <button onClick={() => setChartsLap(null)}>Close</button>
+                Lap number X
+                Lap time x seconds
+                Top speed X kmh
+                Average speed X kmh
+                Average gas throttle input x%
+                Average brake input x%
+                Tire degradation x%
+                ERS burnt x Joules
+                Car damage: yes/no
+                DRS usage: yes/no
+
+                Wykresy
+                {JSON.stringify(chartsLap)}
             </div>
         );
     };
@@ -113,6 +149,7 @@ export default function ShowSessions(props){
             { !session.isChecking && initCheck() }
             <div className="screen"><div className="middle">
                 { session.checkOwn ? overallReady() : <LoadingIndicator text="Waiting for data" /> }
+                {chartsLap && showCharts()}
             </div></div>
         </>
     )

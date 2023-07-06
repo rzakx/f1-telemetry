@@ -11,13 +11,17 @@ import Rejestracja from "./Strony/Rejestracja";
 import Pusta from "./Strony/Pusta";
 import Sessions from "./Strony/Sessions";
 import ShowSession from "./Strony/ShowSession";
+import Mainpage from "./Strony/Mainpage";
+import CarSetups from "./Strony/CarSetups";
 
 export default function Katalogi() {
     const state = localStorage.getItem("token") ? localStorage.getItem("token") : false;
     return (
         <Router>
             <Routes>
-                <Route path="/" element={state ? <GlownyHUD /> : <Navigate to="/login" />} exact/>
+                <Route path="/" element={state ? <Mainpage /> : <Navigate to="/login" />} exact/>
+                <Route path="/realtimehud" element={state ? <GlownyHUD /> : <Navigate to="/login" />} />
+                <Route path="/setups" element={state ? <CarSetups /> : <Navigate to="/login" /> } />
                 <Route path="/sessions" element={state ? <Sessions /> : <Navigate to="/login" />} />
                 <Route path="/session/:sessionId" element={state ? <ShowSession /> : <Navigate to="/login" />} />
                 <Route path="/login" element={state ? <Navigate to="/" /> : <Logowanie />} />

@@ -405,7 +405,7 @@ setInterval(() => {
 		zapiszDaneSesji(v[0], v[1], v[2], v[3], v[4]);
 		x = x + 1;
 	});
-	console.log("Zapisano", x, " danych z buffora");
+	(x !== 0) && console.log("Zapisano", x, " danych z buffora");
 }, 1 * 60 * 1000); //1 minuta
 
 serverUDP.on("error", (er) => {

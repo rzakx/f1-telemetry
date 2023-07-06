@@ -5,7 +5,7 @@ body { background: url(./F1_22_12.png); background-position: center; background-
 	100% { opacity: 1; }
 }
 .screen { width: 100%; height: 100vh; padding: 50px 50px 50px 110px; background: rgba(20,20,20,0.9); }
-.middle { width: 95%; max-width: 1300px; min-width: 900px; height: 100%; margin: 0 auto; animation: smoothIn 1s; }
+.middle { width: 95%; max-width: 1300px; min-width: 900px; height: 100%; margin: 0 auto; animation: smoothIn 1s; position: relative;}
 h1.title { color: #eee; text-transform: uppercase; text-shadow: 2px 2px 6px #000; letter-spacing: 3px; padding-bottom: 5px; border-bottom: 2px solid crimson; margin-bottom: 5px; max-width: 300px;  }
 h3.title { color: #ccc; text-transform: uppercase; text-shadow: 2px 2px 5px #000; letter-spacing: 1px; margin-bottom: 40px; }
 #root { width: 100%; height: 100vh; display: flex; display: -webkit-flex; align-items: center; justify-content: center;}
@@ -232,8 +232,10 @@ table img {
 	0% { transform: scale(1); }
 	100% { transform: scale(0); }
 }
-.showSessionOverall { display: flex; width: 100%; min-height: 600px; animation: ease smoothIn 1s; gap: 5px; }
+.showSessionOverall { display: flex; width: 100%; min-height: 600px; max-height: 100%; animation: ease smoothIn 1s; gap: 5px; }
 .showSessionOverallInfo { padding: 20px; display: flex; flex-direction: column; background: rgb(25,25,25); font-size: 1.2rem; font-weight: bold; letter-spacing: 1px; text-align: center; text-shadow: 1px 1px 3px #111; }
-.showSessionOverallLaps { display: flex; flex-grow: 1; }
-.showSessionOverallLaps table { width: 100%; }
-.showSessionOverallInfo img { filter: drop-shadow(-5px 5px 10px #000); }
+.showSessionOverallLaps { display: flex; flex-grow: 1; overflow: auto; flex-direction: column; background: #191919; }
+.showSessionOverallLaps table { width: 100%; max-height: unset; }
+.showSessionOverallInfo img { filter: drop-shadow(-5px 5px 10px #000); max-width: 300px; max-height: 250px; display: flex; align-self: center; margin-top: 20px; }
+.filler { display: flex; width: 100%; display: flex; flex-grow: 1; }
+.lapCharts { position: absolute; animation: smoothIn 1s; display: flex; left: -10px; right: -10px; top: -10px; bottom: -10px; background: rgba(20,20,20,0.98); z-index: 20;}

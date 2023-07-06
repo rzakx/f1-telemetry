@@ -54,8 +54,18 @@ export default function Nawigacja() {
 						</NavLink>
 					</li>
 					<li>
+						<NavLink to="/realtimehud">
+							Realtime Data
+						</NavLink>
+					</li>
+					<li>
 						<NavLink to="/sessions">
 							<RiArchiveFill /> Sessions
+						</NavLink>
+					</li>
+					<li>
+						<NavLink to="/setups">
+							Car setups
 						</NavLink>
 					</li>
 				</ul>

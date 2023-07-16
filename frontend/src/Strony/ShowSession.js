@@ -4,6 +4,7 @@ import { NavLink, useParams } from "react-router-dom";
 import Axios from "axios";
 import { useState } from "react";
 import LoadingIndicator from "../Components/LoadingIndicator.js";
+import { AreaChart, XAxis, YAxis, CartesianGrid, Area, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function ShowSessions(props){
     const {sessionId} = useParams();
@@ -99,7 +100,7 @@ export default function ShowSessions(props){
                                 <td>{lapS1[okr] ? gb.lapTimeFormat(lapS2[okr], false) : "-"}</td>
                                 <td>{(lapS1[okr] && lapS2[okr]) ? gb.lapTimeFormat(time - lapS1[okr] - lapS2[okr], false) : "-"}</td>
                                 <td>
-                                    <button className="tabelaOdnosnik" onClick={() => setChartsLap(laps[okr])}>Charts</button>
+                                    <button className="tabelaOdnosnik" onClick={() => setChartsLap({minF: laps[okr].minF, maxF: laps[okr].maxF, frames: laps[okr].f, time: time, lapNumber: okr})}>Charts</button>
                                     {(refLapId ? (
                                         (refLapId == (sessionId + "-lap" + okr))
                                         ? <button className="tabelaOdnosnik danger" onClick={ () => {
@@ -123,23 +124,95 @@ export default function ShowSessions(props){
     };
 
     const showCharts = () =>{
-        return(
-            <div className="lapCharts">
-                <button onClick={() => setChartsLap(null)}>Close</button>
-                Lap number X
-                Lap time x seconds
-                Top speed X kmh
-                Average speed X kmh
-                Average gas throttle input x%
-                Average brake input x%
-                Tire degradation x%
-                ERS burnt x Joules
-                Car damage: yes/no
-                DRS usage: yes/no
+        let topSpeed = 0;
+        let avgSpeed = 0;
+        let avgThrottle = 0;
+        let avgBrake = 0;
+        let drsUsage = false;
+        let x = 0;
+        let initTireDegradation = undefined;
+        let lastTireDegradation = undefined;
 
-                Wykresy
-                {JSON.stringify(chartsLap)}
-            </div>
+        let chartsData = [];
+
+        chartsLap.frames.map( frame => {
+            const frameData = session.data[frame];
+            x = x+1;
+            if(frameData.telemetria.predkosc > topSpeed) topSpeed = frameData.telemetria.predkosc;
+            avgSpeed = avgSpeed + frameData.telemetria.predkosc;
+            avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
+            avgBrake = avgBrake + frameData.telemetria.hamulec*100;
+            chartsData.push({frame: frame, speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0)})
+            if(frameData.uszkodzenia){
+                if(initTireDegradation === undefined) initTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
+                lastTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4
+            }
+        });
+        console.log(session.data);
+        console.log(chartsData);
+        /*
+        todo:
+        - wykresy
+        - drs usage,
+        - ers % baterii
+        - car damage check,
+        - check compared lap czy jest na tym samym torze
+        - tire type wyswietlic w chartsach
+        */
+        
+        return(
+            <div className="lapDetails"><div className="relativeLapDetails">
+                <button className="closeButton" onClick={() => setChartsLap(null)}>Close</button>
+                <div className="lapDetailsInfo">
+                    <span>Lap number {chartsLap.lapNumber}</span>
+                    <span>Lap time {gb.lapTimeFormat(chartsLap.time, true)}</span>
+                    <span>Top speed {topSpeed} kmh</span>
+                    <span>Average speed {(avgSpeed/x).toFixed(1)} kmh</span>
+                    <span>Average gas throttle input {(avgThrottle/x).toFixed(1)}%</span>
+                    <span>Average brake input {(avgBrake/x).toFixed(0)}%</span>
+                    <span>Tire degradation {(lastTireDegradation - initTireDegradation).toFixed(2)}%</span>
+                    <span>ERS burnt {session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS} Joules</span>
+                    <span>Car damage: yes/no</span>
+                    <span>DRS usage: {drsUsage ? "Yes" : "No"}</span>
+                </div>
+                <div className="lapCharts">
+                    <ResponsiveContainer width="100%">
+                        <AreaChart syncId="charts" data={chartsData}>
+                            <defs>
+                                <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#af7d00" stopOpacity={0.9}/>
+                                    <stop offset="95%" stopColor="#af7d00" stopOpacity={0.3}/>
+                                </linearGradient>
+                            </defs>
+                            <XAxis dataKey="frame" hide={true}/>
+                            <YAxis />
+                            <CartesianGrid strokeDasharray="1 1" />
+                            <Tooltip />
+                            <Area type="monotoneX" dataKey="speed" stroke="#af7d00" fill="url(#colorUv)" fillOpacity={1} />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%">
+                        <AreaChart syncId="charts" data={chartsData}>
+                            <defs>
+                                <linearGradient id="throttleColor" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#004600" stopOpacity={0.9}/>
+                                    <stop offset="95%" stopColor="#004600" stopOpacity={0.3}/>
+                                </linearGradient>
+                                <linearGradient id="brakeColor" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#6a0000" stopOpacity={0.9}/>
+                                    <stop offset="95%" stopColor="#6a0000" stopOpacity={0.3}/>
+                                </linearGradient>
+                            </defs>
+                            <XAxis dataKey="frame" hide={true}/>
+                            <YAxis />
+                            <CartesianGrid strokeDasharray="1 1" />
+                            <Tooltip />
+                            <Area type="monotoneX" dataKey="brake" stroke="#6a0000" fill="url(#brakeColor)" fillOpacity={0.6} />
+                            <Area type="monotoneX" dataKey="throttle" stroke="#004600" fill="url(#throttleColor)" fillOpacity={0.6} />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div></div>
         );
     };
 

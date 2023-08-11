@@ -9,6 +9,7 @@ import { BsFillExclamationSquareFill, BsFillXSquareFill } from "react-icons/bs";
 export default function Sessions(props){
     const [ showPopup, setShowPopup ] = useState(null);
     const [ sessionsData, setSessionsData ] = useState({data: null, checked: false, error: null});
+    const [ filter, setFilter ] = useState({sessionType: -1, car: -1, dateFrom: null, dateTo: null, track: -1});
 
     const deleteSession = (id) => {
         Axios.post(gb.backendIP+"deleteSession/"+localStorage.getItem("token")).then((res) => {
@@ -45,6 +46,12 @@ export default function Sessions(props){
         } else {
             return(
                 sessionsData.data.map((row) => {
+                    if((filter.sessionType != -1) && (filter.sessionType != row.sessionType)) return;
+                    if((filter.track != -1) && (filter.track != row.trackId)) return;
+                    if((filter.car != -1) && (filter.car != row.carId)) return;
+                    console.log(new Date(row.lastUpdate), filter.dateFrom, filter.dateTo);
+                    if((filter.dateFrom) && (filter.dateFrom > row.lastUpdate)) return;
+                    if((filter.dateTo) && (filter.dateTo < row.lastUpdate)) return;
                     return(
                         <tr key={row.session_id}>
                             <td>{row.session_id}</td>
@@ -67,20 +74,53 @@ export default function Sessions(props){
         <>
             <Nawigacja />
             <div className="screen">
-                <div className="middle">
-                    <h1 className="title">Sessions</h1>
-                    <h3 className="title">Showing your detected sessions data</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Session ID</th><th>Session Type</th><th>Track</th><th>Car</th><th>Date</th><th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            { sessionsData.checked ? showSessions() : checkSessions() }
-                        </tbody>
-                    </table>
-                </div>
+                    <div className="screenHeader">
+                        <div className="screenHeaderTitle">
+                            <h1 className="title">Sessions</h1>
+                            <h3 className="title">Showing your detected sessions data</h3>
+                        </div>
+                        <div className="sessionsFilters">
+                            <div className="row">
+                                <div className="sessionsFilter">
+                                    <span>Track</span>
+                                    <select onChange={(e) => setFilter({...filter, track: e.target.value}) }>
+                                        <option value={-1}>Any</option>
+                                        { gb.trackIds.map((v, i) => { return <option value={i}>{v}</option> }) }
+                                    </select>
+                                </div>
+                                <div className="sessionsFilter">
+                                    <span>Session Type</span>
+                                    <select onChange={(e) => setFilter({...filter, sessionType: e.target.value}) }>
+                                        <option value={-1}>Any</option>
+                                        { gb.sessionType.map((v, i) => { return <option value={i}>{v}</option> }) }
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="row">
+                                <div className="sessionsFilter">
+                                    <span>Car</span>
+                                    <select onChange={(e) => setFilter({...filter, car: e.target.value}) }>
+                                        <option value={-1}>Any</option>
+                                        { Object.entries(gb.teamIds).map((v, i) => { return <option value={v[0]}>{v[1]}</option> }) }
+                                    </select>
+                                </div>
+                                <div className="sessionsFilter">
+                                    <span>Date</span>
+                                    <input type="date" onChange={(e) => setFilter({...filter, dateFrom: e.target.value})} />
+                                </div>
+                                <div className="sessionsFilter" style={{marginLeft: '-30px'}}>
+                                    <span>-</span>
+                                    <input type="date" onChange={(e) => setFilter({...filter, dateTo: e.target.value})} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="sessionsTable">
+                        <table>
+                            <thead><tr><th>Session ID</th><th>Session Type</th><th>Track</th><th>Car</th><th>Date</th><th>Action</th></tr></thead>
+                            <tbody>{ sessionsData.checked ? showSessions() : checkSessions() }</tbody>
+                        </table>
+                    </div>
             </div>
 
             { showPopup &&

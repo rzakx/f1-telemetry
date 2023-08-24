@@ -1,8 +1,10 @@
 import { NavLink } from "react-router-dom";
 import {
-	RiArchiveFill,
+	RiCalendarTodoFill,
 	RiLogoutBoxLine,
-	RiHome3Fill,
+	RiDashboardFill,
+	RiEqualizerFill,
+	RiPulseLine,
 } from "react-icons/ri";
 import Axios from "axios";
 import { useState } from "react";
@@ -50,22 +52,22 @@ export default function Nawigacja() {
 				<ul>
 					<li>
 						<NavLink to="/">
-							<RiHome3Fill /> Main page
+							<RiDashboardFill /> Main page
 						</NavLink>
 					</li>
 					<li>
 						<NavLink to="/realtimehud">
-							Realtime Data
+							<RiPulseLine /> Realtime Data
 						</NavLink>
 					</li>
 					<li>
-						<NavLink to="/sessions">
-							<RiArchiveFill /> Sessions
+						<NavLink id="sessionsHref" to="/sessions">
+							<RiCalendarTodoFill /> Sessions
 						</NavLink>
 					</li>
 					<li>
 						<NavLink to="/setups">
-							Car setups
+							<RiEqualizerFill /> Car setups
 						</NavLink>
 					</li>
 				</ul>

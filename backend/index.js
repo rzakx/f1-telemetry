@@ -397,7 +397,7 @@ const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 
 // "OCZYSZCZANIE" CACHE, (DANE LĄDUJĄ POWOLUTKU DO BAZY DANYCH)
 setInterval(() => {
-	let queryLimit = 2500; //limit operacji bazy danych w interwale
+	let queryLimit = 4500; //limit operacji bazy danych w interwale
 	let x = 0;
 	bufforData.keys() && bufforData.keys().map((key) => {
 		if(x >= queryLimit) return;

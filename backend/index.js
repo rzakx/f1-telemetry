@@ -357,6 +357,7 @@ let daneOkrazenia = {
 	aktualnaPozycja: 0,
 	numerOkrazenia: 0,
 	anulowaneOkrazenie: 0,
+	lapDistance: 0,
 };
 
 /* główne dane są wysyłane cały czas co jakiś czas z jakąś cząsteczką informacji,
@@ -771,17 +772,16 @@ serverUDP.on("message", (msg, info) => {
 				.uint8("m_timeTrialPBCarIdx")
 				.uint8("m_timeTrialRivalCarIdx")
 				.parse(msg);
-			const lap =
-				lapParser.m_lapData[lapParser.m_header.m_playerCarIndex];
+			const lap = lapParser.m_lapData[lapParser.m_header.m_playerCarIndex];
 			daneOkrazenia.ostatnieOkr = lap.m_lastLapTimeInMS;
 			daneOkrazenia.aktualneOkr = lap.m_currentLapTimeInMS;
 			daneOkrazenia.sektor1 = lap.m_sector1TimeInMS;
 			daneOkrazenia.sektor2 = lap.m_sector2TimeInMS;
 			daneOkrazenia.aktualnaPozycja = lap.m_carPosition;
-			daneOkrazenia.poprzedniNumerOkrazenia =
-				daneOkrazenia.numerOkrazenia;
+			daneOkrazenia.poprzedniNumerOkrazenia = daneOkrazenia.numerOkrazenia;
 			daneOkrazenia.numerOkrazenia = lap.m_currentLapNum;
 			daneOkrazenia.anulowaneOkrazenie = lap.m_currentLapInvalid;
+			daneOkrazenia.lapDistance = lap.m_lapDistance;
 			przechowujSesje(
 				lapParser.m_header.m_sessionUID,
 				lapParser.m_header.m_frameIdentifier,

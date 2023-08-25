@@ -178,7 +178,6 @@ export default function ShowSessions(props){
 		let avgSpeedC = 0;
 		let avgThrottleC = 0;
 		let avgBrakeC = 0;
-		let xC = 0;
 		let initTireDegradationC = undefined;
 		let lastTireDegradationC = undefined;
 		let framesSource = undefined;
@@ -186,12 +185,11 @@ export default function ShowSessions(props){
 
 		chartsLap.frames.map( frame => {
 			const frameData = session.data[frame];
-			x = x+1;
 			if(frameData.telemetria.predkosc > topSpeed) topSpeed = frameData.telemetria.predkosc;
 			avgSpeed = avgSpeed + frameData.telemetria.predkosc;
 			avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
 			avgBrake = avgBrake + frameData.telemetria.hamulec*100;
-			chartsData.push({frame: frame, gear: frameData.telemetria.bieg, drs: frameData.telemetria.aktywowanyDRS, steering: (frameData.telemetria.kierownica).toFixed(3), speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0), lapDist: frameData.daneOkrazenia.lapDistance});
+			chartsData.push({frame: frame, gear: frameData.telemetria.bieg, drs: frameData.telemetria.aktywowanyDRS, steering: (frameData.telemetria.kierownica).toFixed(3), speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0), lapDist: frameData.daneOkrazenia.lapDistance.toFixed(2)});
 			if(frameData.uszkodzenia){
 				if(initTireDegradation === undefined) initTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
 				lastTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
@@ -234,7 +232,7 @@ export default function ShowSessions(props){
 						speedRef: framesSource.data[frame].telemetria.predkosc,
 						throttleRef: (framesSource.data[frame].telemetria.gaz*100).toFixed(0),
 						brakeRef: (framesSource.data[frame].telemetria.hamulec*100).toFixed(0),
-						lapDist: (framesSource.data[frame].daneOkrazenia.lapDistance)
+						lapDist: (framesSource.data[frame].daneOkrazenia.lapDistance).toFixed(2)
 					});
 					if(framesSource.data[frame].uszkodzenia){
 						if(initTireDegradationC === undefined) initTireDegradationC = (framesSource.data[frame].uszkodzenia.zuzycieFR + framesSource.data[frame].uszkodzenia.zuzycieFL + framesSource.data[frame].uszkodzenia.zuzycieRR + framesSource.data[frame].uszkodzenia.zuzycieRL)/4;
@@ -247,6 +245,7 @@ export default function ShowSessions(props){
 
 		//usun wpisy ktore maja lapDist < 0
 		chartsData = chartsData.filter(row => (!(row.lapDist < 0)));
+
 		//posortuj wpisy rosnaco na lapDist
 		chartsData = chartsData.sort((a, b) => {
 			return a.lapDist - b.lapDist
@@ -256,7 +255,6 @@ export default function ShowSessions(props){
 		//console.log(chartsLap);
 		/*
 		todo:
-		- check compared lap czy jest na tym samym torze
 		- reszta wykresow
 		- napisac funkcje wychwyc bledy
 		- rysowanie pozycji na minimapie

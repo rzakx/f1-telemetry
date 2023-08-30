@@ -2,7 +2,7 @@ import gb from "../GlobalVars.js";
 import Nawigacja from "../Nawigacja.js";
 import { useParams } from "react-router-dom";
 import Axios from "axios";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import LoadingIndicator from "../Components/LoadingIndicator.js";
 import { AreaChart, XAxis, YAxis, CartesianGrid, Area, Tooltip, ResponsiveContainer, Line, LineChart } from "recharts";
 import { CgArrowRight } from "react-icons/cg";
@@ -15,9 +15,73 @@ export default function ShowSessions(props){
 	const [refLapId, setRefLapId] = useState(localStorage.getItem("referenceLap") ? JSON.parse(localStorage.getItem("referenceLap")).id : null);
 	const [session, setSession] = useState({data: null, checkOwn: false, isChecking: false});
 	const [refLapData, setRefLapData] = useState({data: null});
+	const canvasRef = useRef(null);
+	const imgRef = useRef(null);
+	const dpr = window.devicePixelRatio;
+
 	if(!sessionId){
 		window.location.href = "/sessions";
 	}
+
+	const drawPosition = (frame) => {
+		if(frame){
+			const posX = session.data[frame].daneMotion.pozycjaX;
+			const posY = session.data[frame].daneMotion.pozycjaZ;
+			const canvasX = imgRef.current.width;
+			const canvasY = imgRef.current.height;
+			const ctx = canvasRef.current.getContext('2d');
+			ctx.scale(dpr, dpr);
+			ctx.clearRect(0,0,canvasX, canvasY);
+			ctx.beginPath();
+			let [correctX, correctY, viewX, viewY] = gb.minimapMappings[session.track];
+			let tmpX = (posX+correctX)/viewX*canvasX;
+			let tmpY = (posY+correctY)/viewY*canvasY;
+			console.log("Rysuje", tmpX, tmpY);
+			ctx.arc(tmpX-3, tmpY-3, 6, 0, 6*Math.PI);
+			ctx.fillStyle = "#ffffff";
+			ctx.fill();
+			ctx.closePath();
+		}
+	};
+
+	const setImgRef = (ref) => {
+		if(!ref || imgRef.current){ return }
+		imgRef.current = ref;
+		//canvas o dużych wymiarach podczas rysowania figur powodują że są one zblurowane, a pixele są rozjechane
+		//zmienna dpr ma za zadanie sfixować ten błąd
+		const rect = imgRef.current.getBoundingClientRect();
+		imgRef.current.width = rect.width * dpr ;
+		imgRef.current.height = rect.height * dpr;
+	}
+
+	const setCanvasRef = (ref) => {
+		if(!ref || canvasRef.current){ return }
+		canvasRef.current = ref;
+		const img = imgRef.current.getBoundingClientRect();
+		const px = Math.max(...[img.width, img.height]);
+		canvasRef.current.style.width = `${px}+px`;
+		canvasRef.current.style.height = `${px}+px`;
+		canvasRef.current.width = px * dpr;
+		canvasRef.current.height = px * dpr;
+	};
+
+	const CustomToolTip = ({ active, payload, label }) => {
+		if (!payload.length) return;
+		return(
+			<div className="customTooltip">
+				<h1>Lap distance {label}m</h1>
+				{["speed", "speedRef"].includes(payload[0].name) && (payload[0].payload.speed != undefined) && <span>Speed: {payload[0].payload.speed}km/h</span>}
+				{["speed", "speedRef"].includes(payload[0].name) && (payload[0].payload.speedRef != undefined) && <span>Reference Speed: {payload[0].payload.speedRef}km/h</span>}
+				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.brake != undefined) && <span>Brake: {parseInt(payload[0].payload.brake)}%</span>}
+				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.brakeRef != undefined) && <span>Reference Brake: {parseInt(payload[0].payload.brakeRef)}%</span>}
+				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.throttle != undefined) && <span>Throttle: {parseInt(payload[0].payload.throttle)}%</span>}
+				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.throttleRef != undefined) && <span>Reference Throttle: {parseInt(payload[0].payload.throttleRef)}%</span>}
+				{["steering", "steeringRef"].includes(payload[0].name) && (payload[0].payload.steering != undefined) && <span>Steering: {parseFloat(payload[0].payload.steering).toFixed(3)}</span>}
+				{["steering", "steeringRef"].includes(payload[0].name) && (payload[0].payload.steeringRef != undefined) && <span>Reference Steering: {parseFloat(payload[0].payload.steeringRef).toFixed(3)}</span>}
+				{ drawPosition(payload[0].payload.frame) }
+			</div>
+		)
+	};
 
 	const initCheck = () => {
 		isThatUserSession();
@@ -78,6 +142,24 @@ export default function ShowSessions(props){
 			lapTimes[lap] = session.data[maxFrame]["daneOkrazenia"]["aktualneOkr"];
 			if(lapTimes[lap-1]) lapTimes[lap-1] = session.data[maxFrame]["daneOkrazenia"]["ostatnieOkr"];
 		}
+		//najszybsze PEŁNE okrazenie
+		let fastestLap;
+		lapTimes.map((v, i) => {
+			if(!fastestLap) fastestLap = v;
+			if(fastestLap > v && lapS2[i]) {
+				fastestLap = v;
+			}
+		});
+
+		//najszybszy sektor 3
+		let fastestS3;
+		lapTimes.map((v, i) => {
+			if(lapS1[i] && lapS2[i]){
+				if(!fastestS3) fastestS3 = v - lapS1[i] - lapS2[i];
+				if((v - lapS1[i] - lapS2[i]) < fastestS3) fastestS3 = v - lapS1[i] - lapS2[i];
+			}
+		});
+
 		return(
 			<div className="showSessionOverall">
 				<div className="showSessionOverallInfo">
@@ -93,17 +175,18 @@ export default function ShowSessions(props){
 				</div>
 				<div className="showSessionOverallLaps">
 					<table>
-						<thead><tr><th>Lap</th><th>Tire type</th><th>Lap Time</th><th>Sector 1</th><th>Sector 2</th><th>Sector 3</th><th>Action</th></tr></thead>
+						<thead><tr><th>Lap</th><th>Tire type</th><th>Lap Time</th><th style={{color: '#ef4444'}}>Sector 1</th><th style={{color: '#3b82f6'}}>Sector 2</th><th style={{color: '#fbbf24'}}>Sector 3</th><th>Action</th></tr></thead>
 						<tbody>
 					{ lapTimes.length && lapTimes.map((time, okr) => {
 						const lastLapData = Object.entries(session.data).filter((v, k) => v[0] == laps[okr].maxF)[0][1];
+						if(!lapS2[okr]) return;
 						return <tr key={"okr"+okr}>
 								<td>{okr}</td>
 								<td>{gb.typOponWizualnie[ lastLapData.statusPojazdu.typOponWizualne ]}</td>
-								<td>{gb.lapTimeFormat(time, true)}</td>
-								<td>{gb.lapTimeFormat(lapS1[okr] || time , false)}</td>
-								<td>{lapS1[okr] ? gb.lapTimeFormat(lapS2[okr], false) : "-"}</td>
-								<td>{(lapS1[okr] && lapS2[okr]) ? gb.lapTimeFormat(time - lapS1[okr] - lapS2[okr], false) : "-"}</td>
+								<td className={lapTimes[okr] == fastestLap ? "tableFastestLap" : ""}>{gb.lapTimeFormat(time, true)}</td>
+								<td className={lapS1[okr] == Math.min(...lapS1.filter(r => r)) ? "tableFastestLap" : ""}>{gb.lapTimeFormat(lapS1[okr] || time , false)}</td>
+								<td className={lapS2[okr] == Math.min(...lapS2.filter(r => r)) ? "tableFastestLap" : ""}>{lapS1[okr] ? gb.lapTimeFormat(lapS2[okr], false) : "-"}</td>
+								<td className={fastestS3 == (time - lapS1[okr] - lapS2[okr]) ? "tableFastestLap" : ""}>{(lapS1[okr] && lapS2[okr]) ? gb.lapTimeFormat(time - lapS1[okr] - lapS2[okr], false) : "-"}</td>
 								<td>
 									<button className="tabelaOdnosnik" onClick={() => {
 										setChartsLap({
@@ -162,12 +245,12 @@ export default function ShowSessions(props){
 	};
 
 	const showCharts = () =>{
-
 		let topSpeed = 0;
 		let avgSpeed = 0;
 		let avgThrottle = 0;
 		let avgBrake = 0;
 		let x = 0;
+		let xC = 0;
 		let initTireDegradation = undefined;
 		let lastTireDegradation = undefined;
 		let positionMaxFrame = session.data[chartsLap.maxF].daneOkrazenia.aktualnaPozycja;
@@ -185,11 +268,13 @@ export default function ShowSessions(props){
 
 		chartsLap.frames.map( frame => {
 			const frameData = session.data[frame];
+			if(frameData.daneOkrazenia.lapDistance < 0) return;
+			x++;
 			if(frameData.telemetria.predkosc > topSpeed) topSpeed = frameData.telemetria.predkosc;
 			avgSpeed = avgSpeed + frameData.telemetria.predkosc;
 			avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
 			avgBrake = avgBrake + frameData.telemetria.hamulec*100;
-			chartsData.push({frame: frame, gear: frameData.telemetria.bieg, drs: frameData.telemetria.aktywowanyDRS, steering: (frameData.telemetria.kierownica).toFixed(3), speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0), lapDist: frameData.daneOkrazenia.lapDistance.toFixed(2)});
+			chartsData.push({frame: frame, gear: frameData.telemetria.bieg, drs: frameData.telemetria.aktywowanyDRS, steering: (frameData.telemetria.kierownica).toFixed(3), speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0), lapDist: frameData.daneOkrazenia.lapDistance.toFixed(0)});
 			if(frameData.uszkodzenia){
 				if(initTireDegradation === undefined) initTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
 				lastTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
@@ -219,7 +304,14 @@ export default function ShowSessions(props){
 					})
 					//TODO: co jesli porownywana sesja jest juz usunieta?
 				}
+				/*
+					TODO:
+					dane szczegółowe okrazenia referencyjnego wrzucic do useState,
+					analize okrazenia referencyjnego robic dopiero jak useState sie ustawi
+				*/
 				comparedLapData.frames.map(frame => {
+					if(framesSource.data[frame].daneOkrazenia.lapDistance < 0) return;
+					xC++;
 					if(framesSource.data[frame].telemetria.predkosc > topSpeedC) topSpeedC = framesSource.data[frame].telemetria.predkosc;
 					avgSpeedC = avgSpeedC + framesSource.data[frame].telemetria.predkosc;
 					avgThrottleC = avgThrottleC + framesSource.data[frame].telemetria.gaz*100;
@@ -232,7 +324,7 @@ export default function ShowSessions(props){
 						speedRef: framesSource.data[frame].telemetria.predkosc,
 						throttleRef: (framesSource.data[frame].telemetria.gaz*100).toFixed(0),
 						brakeRef: (framesSource.data[frame].telemetria.hamulec*100).toFixed(0),
-						lapDist: (framesSource.data[frame].daneOkrazenia.lapDistance).toFixed(2)
+						lapDist: (framesSource.data[frame].daneOkrazenia.lapDistance).toFixed(0)
 					});
 					if(framesSource.data[frame].uszkodzenia){
 						if(initTireDegradationC === undefined) initTireDegradationC = (framesSource.data[frame].uszkodzenia.zuzycieFR + framesSource.data[frame].uszkodzenia.zuzycieFL + framesSource.data[frame].uszkodzenia.zuzycieRR + framesSource.data[frame].uszkodzenia.zuzycieRL)/4;
@@ -240,30 +332,60 @@ export default function ShowSessions(props){
 					}
 				});
 				goodToGo = true;
+
+				
 			}
 		}
-
-		//usun wpisy ktore maja lapDist < 0
-		chartsData = chartsData.filter(row => (!(row.lapDist < 0)));
 
 		//posortuj wpisy rosnaco na lapDist
 		chartsData = chartsData.sort((a, b) => {
 			return a.lapDist - b.lapDist
 		});
 
+		if(chartsLap.compare){
+			//jesli jest speed a speedRef nie ma, to ustawic speedRef na średnią pomiedzy poprzednim a nastepnym i na odwrot, jesli speedRef jest a speed nie ma itd.	
+			const estimUnknown = (iteration, key) => {
+				let seekMin = iteration;
+				let seekMax = iteration;
+				while(chartsData[seekMin][key] === undefined){
+					seekMin = seekMin - 1;
+				}
+				while(chartsData[seekMax][key] === undefined){
+					seekMax = seekMax + 1;
+				}
+				return (parseFloat(chartsData[seekMin][key])+parseFloat(chartsData[seekMax][key]))/2;
+			};
+
+			for(let iter = 1; iter < chartsData.length-1; iter++){
+				console.log(chartsData[iter]);
+				if(chartsData[iter].speed === undefined) chartsData[iter].speed = estimUnknown(iter, "speed");
+				if(chartsData[iter].speedRef === undefined) chartsData[iter].speedRef = estimUnknown(iter, "speedRef");
+				if(chartsData[iter].brake === undefined) chartsData[iter].brake = estimUnknown(iter, "brake");
+				if(chartsData[iter].brakeRef === undefined) chartsData[iter].brakeRef = estimUnknown(iter, "brakeRef");
+				if(chartsData[iter].throttle === undefined) chartsData[iter].throttle = estimUnknown(iter, "throttle");
+				if(chartsData[iter].throttleRef === undefined) chartsData[iter].throttleRef = estimUnknown(iter, "throttleRef");
+				if(chartsData[iter].steering === undefined) chartsData[iter].steering = estimUnknown(iter, "steering");
+				if(chartsData[iter].steeringRef === undefined) chartsData[iter].steeringRef = estimUnknown(iter, "steeringRef");
+			}
+		}
+
 		console.log(chartsData);
-		//console.log(chartsLap);
+
 		/*
 		todo:
 		- reszta wykresow
 		- napisac funkcje wychwyc bledy
-		- rysowanie pozycji na minimapie
 		- css
+		- car damage check
 		*/
 		
 		return(
 			<div className="lapDetails">
-				<button className="closeButton" onClick={() => setChartsLap(null)}><IoClose /> Close</button>
+				<button className="closeButton" onClick={() => {
+					imgRef.current = null;
+					canvasRef.current = null;
+					setChartsLap(null);
+				}}><IoClose /> Close</button>
 				<div className="lapDetailsInfo">
 					<div className="overallLap">
 						<div className="overallLapHeader">
@@ -271,6 +393,9 @@ export default function ShowSessions(props){
 								<p>Session {sessionId}</p>
 								<span>Lap {chartsLap.lapNumber} Position {(positionMaxFrame !== positionMinFrame) ? positionMinFrame : positionMaxFrame} {(positionMaxFrame !== positionMinFrame) && <><CgArrowRight /> {positionMaxFrame}</>}</span>
 							</div>
+							{
+
+							}
 							<div className="overallLapSectors">
 								<span>LAP | {gb.lapTimeFormat(chartsLap.time, true)}</span>
 								<span>S1 | {gb.lapTimeFormat(chartsLap.s1, false)}</span>
@@ -301,8 +426,11 @@ export default function ShowSessions(props){
 					</div>
 					<div className="pionowaKreska" />
 					<div className="lapMinimap">
-						<span>{gb.trackIds[session.track]}</span> + flaga
-						<img src={"/images/"+gb.trackMaps[session.track]} />
+						<span>{gb.trackIds[session.track]} + flaga</span>
+						<div className="lapMinimapImg">
+							<img src={"/images/"+gb.trackMaps[session.track]} ref={setImgRef} />
+							<canvas id="minimapCanvas" ref={setCanvasRef} className="lapMinimapCanvas"/>
+						</div>
 					</div>
 				</div>
 				<div className="lapCharts" id="lapCharts">
@@ -319,7 +447,7 @@ export default function ShowSessions(props){
 								<XAxis dataKey="lapDist" tick={false}/>
 								<YAxis unit="kmh" />
 								<CartesianGrid strokeDasharray="3 3" stroke="#aaa" strokeOpacity={0.1}/>
-								<Tooltip />
+								<Tooltip filterNull={false} content={<CustomToolTip />} />
 								<Area connectNulls type="monotone" dataKey="speed" strokeWidth={2} stroke="#af7d00" fill="url(#speedColor)" fillOpacity={1} />
 							</AreaChart>
 						</ResponsiveContainer>
@@ -339,7 +467,7 @@ export default function ShowSessions(props){
 								<XAxis dataKey="lapDist" tick={false}/>
 								<YAxis unit="%" />
 								<CartesianGrid strokeDasharray="3 3" stroke="#aaa" strokeOpacity={0.1}/>
-								<Tooltip />
+								<Tooltip filterNull={false} content={<CustomToolTip />} />
 								<Area connectNulls type="monotone" dataKey="brake" strokeWidth={2} stroke="#6a0000" fill="url(#brakeColor)" />
 								<Area connectNulls type="monotone" dataKey="throttle" strokeWidth={2} stroke="#004600" fill="url(#throttleColor)" />
 							</AreaChart>
@@ -356,8 +484,8 @@ export default function ShowSessions(props){
 								<XAxis dataKey="lapDist" tick={false}/>
 								<YAxis domain={[-1, 1]}/>
 								<CartesianGrid strokeDasharray="3 3" stroke="#aaa" strokeOpacity={0.1}/>
-								<Tooltip />
-								<Area connectNullstype="monotone" dataKey="steering" strokeWidth={2} stroke="dodgerblue" fill="url(#steeringColor)" fillOpacity={0.5} />
+								<Tooltip filterNull={false} content={<CustomToolTip />} />
+								<Area connectNulls type="monotone" dataKey="steering" strokeWidth={2} stroke="dodgerblue" fill="url(#steeringColor)" fillOpacity={0.5} />
 							</AreaChart>
 						</ResponsiveContainer>
 					</div>

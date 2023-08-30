@@ -86,6 +86,38 @@ const GlobalVars = {
             "Texas Short", "Suzuka Short", "Hanoi", "Zandvoort (Netherlands)", "Imola (Italy)", "Portimão",
             "Jeddah", "Miami (USA)"
     ],
+    minimapMappings: [
+        [770, 910, 1550, 1850], //australia
+        [1100, 700, 2200, 1320], //france
+        [700, 600, 1400, 1300], //shangai
+        [450, 660, 900, 1300], //bahrain
+        [570, 630, 1050, 1320], //spain
+        [400, 500, 900, 1100], //monaco
+        [250, 500, 750, 2050], //canada
+        [650, 850, 1200, 1900], //silverstone
+        [0, 0, 0, 0], //hockenheim
+        [650, 650, 1150, 1300], //hungary
+        [800, 1120, 1400, 2220], //belgium
+        [700, 1150, 1400, 2300], //monza
+        [750, 470, 1560, 1020], //singapore
+        [1050, 600, 2100, 1300], //japan
+        [770, 316, 1600, 1006], //abu dhabi
+        [900, 150, 2000, 1300], //texas
+        [590, 380, 720, 1150], //brazil
+        [600, 500, 1400, 900], //austria
+        [900, 600, 1900, 1250], //russia
+        [1050, 1100, 1650, 1250], //mexico
+        [1220, 970, 2250, 1660], //azerbaijan
+        [450, 660, 900, 1300], //bahrain
+        [650, 850, 1200, 1900], //silverstone
+        [900, 150, 2000, 1300], //texas
+        [1050, 600, 2100, 1300], //japan
+        [800, 800, 1700, 1700], //hanoi
+        [500, 500, 1200, 1000], //zandvoort
+        [280, 620, 750, 1250], //portimao
+        [370, 1450, 750, 2900], //saudi
+        [800, 303, 1600, 642], //miami
+    ],
     trackMaps: [
         "australia.svg",
         "france.svg",

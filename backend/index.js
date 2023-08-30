@@ -398,7 +398,7 @@ const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 
 // "OCZYSZCZANIE" CACHE, (DANE LĄDUJĄ POWOLUTKU DO BAZY DANYCH)
 setInterval(() => {
-	let queryLimit = 4500; //limit operacji bazy danych w interwale
+	let queryLimit = 2500; //limit operacji bazy danych w interwale
 	let x = 0;
 	bufforData.keys() && bufforData.keys().map((key) => {
 		if(x >= queryLimit) return;
@@ -407,7 +407,7 @@ setInterval(() => {
 		x = x + 1;
 	});
 	(x !== 0) && console.log("Zapisano", x, " danych z buffora");
-}, 1 * 60 * 1000); //1 minuta
+}, 30 * 1000); //30sec
 
 serverUDP.on("error", (er) => {
 	console.log("Error: ", er);

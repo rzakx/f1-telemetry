@@ -24,7 +24,7 @@ export default function GlownyHUD() {
 		}
 	};
 	const zapiszStorage = () => {
-		console.log(Date.now(), "zapisuje");
+		//console.log(Date.now(), "zapisuje");
 		localStorage.setItem('zapisane', JSON.stringify(dane));
 		setOstatniTimestamp(Date.now());
 	};
@@ -57,13 +57,14 @@ export default function GlownyHUD() {
 	};
 
 	const rysuj = (posX, posZ) => {
+		console.log(posX, posZ);
 		if(!okr.current) return;
 		const ctx = okr.current.getContext("2d");
-		let tmpX = posX/10 + 100;
-		let tmpZ = posZ/10 + 50;
+		let tmpX = (posX+1000)/2000*okr.current.width;
+		let tmpZ = (posZ+1000)/2000*okr.current.height;
 		ctx.fillStyle = "#eee";
 		ctx.beginPath();
-		ctx.arc(tmpX*2, tmpZ*2, 2, 0, 2*Math.PI);
+		ctx.arc(tmpX, tmpZ, 2, 0, 2*Math.PI);
 		ctx.fill();
 		ctx.closePath();
 		//console.log("rysuje tu", tmpX, tmpZ);
@@ -77,7 +78,7 @@ export default function GlownyHUD() {
 		ctx.rect(0,0,500,300);
 		ctx.fill();
 		ctx.closePath();
-		console.log("NOWE OKR");
+		//console.log("NOWE OKR");
 	};
 
 	return (

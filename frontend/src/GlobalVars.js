@@ -1,5 +1,5 @@
 const GlobalVars = {
-    backendIP: "https://backend2.rzak.eu/",
+    backendIP: "https://backend2.rzak.pl/",
     nazwaTrybuERS: ["None", "Medium", "Hotlap", "Overtake"],
     typOponWizualnie: {
 		16: "Soft",
@@ -13,6 +13,15 @@ const GlobalVars = {
 		21: "Medium",
 		22: "Hard"
 	},
+    tireImages: {
+        'Soft': 'tiresoft.svg',
+        'Medium': 'tiremedium.svg',
+        'Hard': 'tirehard.svg',
+        'Inter': 'tireinter.svg',
+        'Wet': 'tirewet.svg',
+        'Ultra Soft': 'tireultrasoft.svg'
+    },
+    weatherType: ['Clear', 'Light clouds', 'Overcast', 'Light rain', 'Heavy rain', 'Storm'],
     trybPaliwo: ["Lean", "Normal", "Rich"],
     typOpon: {
 		16: "C5",

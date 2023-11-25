@@ -152,7 +152,7 @@ export default function ResetHasla(props){
 		<div className="logowanieBg">
 			<div className="logowanie">
 				<div className="logowanieLewa">
-					<div className="logowanieLogo" />
+					<div className="logowanieLogo" style={{background: `url("/images/uczelnia.jpg")`}} />
 				</div>
 				<div className="logowaniePrawa">
                     { (etap === 0) && etap0() }

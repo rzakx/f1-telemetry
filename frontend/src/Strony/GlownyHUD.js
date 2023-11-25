@@ -3,7 +3,7 @@ import io from "socket.io-client";
 import gb from "../GlobalVars.js";
 import Nawigacja from "../Nawigacja.js";
 import {ReactComponent as Hamulec} from "../brake.svg";
-const socket = io.connect('https://backend2.rzak.eu');
+const socket = io.connect('https://backend2.rzak.pl');
 
 export default function GlownyHUD() {
 	const [ dane, setDane ] = useState(null);
@@ -30,10 +30,11 @@ export default function GlownyHUD() {
 	};
 
 	useEffect(() => {
-		socket.on("glowne", (v) => {
+		// socket.on("glowne", (v) => {
+		socket.on(localStorage.getItem("login"), (v) => {
 			rysuj(v.daneMotion.pozycjaX, v.daneMotion.pozycjaZ);
 			if(v.daneOkrazenia.numerOkrazenia != v.daneOkrazenia.poprzedniNumerOkrazenia) noweOkr();
-			setDane(v);
+			setDane({...dane, ...v});
 		});
 	}, []);
 

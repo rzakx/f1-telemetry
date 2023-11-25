@@ -18,6 +18,7 @@ export default function ShowSessions(props){
 	const canvasRef = useRef(null);
 	const imgRef = useRef(null);
 	const dpr = window.devicePixelRatio;
+	document.title = `f1-telemetry | Session ${sessionId}`;
 
 	if(!sessionId){
 		window.location.href = "/sessions";
@@ -191,6 +192,7 @@ export default function ShowSessions(props){
 									<button className="tabelaOdnosnik" onClick={() => {
 										setChartsLap({
 											tire: gb.typOponWizualnie[lastLapData.statusPojazdu.typOponWizualne],
+											tireC: gb.typOpon[lastLapData.statusPojazdu.typOpon],
 											minF: laps[okr].minF,
 											maxF: laps[okr].maxF,
 											frames: laps[okr].f,
@@ -209,6 +211,7 @@ export default function ShowSessions(props){
 										: <button className="tabelaOdnosnik danger" onClick={() => {
 											setChartsLap({
 												tire: gb.typOponWizualnie[lastLapData.statusPojazdu.typOponWizualne],
+												tireC: gb.typOpon[lastLapData.statusPojazdu.typOpon],
 												minF: laps[okr].minF,
 												maxF: laps[okr].maxF,
 												frames: laps[okr].f,
@@ -224,6 +227,7 @@ export default function ShowSessions(props){
 									:
 									<button className="tabelaOdnosnik danger" onClick={ () => linkRef(okr, {
 										tire: gb.typOponWizualnie[lastLapData.statusPojazdu.typOponWizualne],
+										tireC: gb.typOpon[lastLapData.statusPojazdu.typOpon],
 										minF: laps[okr].minF,
 										maxF: laps[okr].maxF,
 										frames: laps[okr].f,
@@ -268,13 +272,16 @@ export default function ShowSessions(props){
 
 		chartsLap.frames.map( frame => {
 			const frameData = session.data[frame];
+			// console.log(frameData);
 			if(frameData.daneOkrazenia.lapDistance < 0) return;
 			x++;
-			if(frameData.telemetria.predkosc > topSpeed) topSpeed = frameData.telemetria.predkosc;
-			avgSpeed = avgSpeed + frameData.telemetria.predkosc;
-			avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
-			avgBrake = avgBrake + frameData.telemetria.hamulec*100;
-			chartsData.push({frame: frame, gear: frameData.telemetria.bieg, drs: frameData.telemetria.aktywowanyDRS, steering: (frameData.telemetria.kierownica).toFixed(3), speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0), lapDist: frameData.daneOkrazenia.lapDistance.toFixed(0)});
+			if(frameData.telemetria){
+				if(frameData.telemetria.predkosc > topSpeed) topSpeed = frameData.telemetria.predkosc;
+				avgSpeed = avgSpeed + frameData.telemetria.predkosc;
+				avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
+				avgBrake = avgBrake + frameData.telemetria.hamulec*100;
+				chartsData.push({frame: frame, gear: frameData.telemetria.bieg, drs: frameData.telemetria.aktywowanyDRS, steering: (frameData.telemetria.kierownica).toFixed(3), speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0), lapDist: frameData.daneOkrazenia.lapDistance.toFixed(0)});
+			}
 			if(frameData.uszkodzenia){
 				if(initTireDegradation === undefined) initTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
 				lastTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
@@ -393,9 +400,6 @@ export default function ShowSessions(props){
 								<p>Session {sessionId}</p>
 								<span>Lap {chartsLap.lapNumber} Position {(positionMaxFrame !== positionMinFrame) ? positionMinFrame : positionMaxFrame} {(positionMaxFrame !== positionMinFrame) && <><CgArrowRight /> {positionMaxFrame}</>}</span>
 							</div>
-							{
-
-							}
 							<div className="overallLapSectors">
 								<span>LAP | {gb.lapTimeFormat(chartsLap.time, true)}</span>
 								<span>S1 | {gb.lapTimeFormat(chartsLap.s1, false)}</span>
@@ -404,12 +408,17 @@ export default function ShowSessions(props){
 							</div>
 						</div>
 						<div className="overallLapRest">
-							<img style={{width: 340}} src={"/images/"+gb.carImages[session.car]} />
+							<img style={{width: 340, height: 'fit-content', alignSelf: 'center'}} src={"/images/"+gb.carImages[session.car]} />
 							<div className="pionowaKreska"/>
-							<span>Tire type {chartsLap.tire}</span>
+							<div className="lapTireType">
+								<h3>Tire type</h3>
+								<img src={"/images/"+gb.tireImages[chartsLap.tire]} />
+								<b>{chartsLap.tire} [{chartsLap.tireC}]</b>
+							</div>
 							<div className="pionowaKreska"/>
 							<div className="lapWeatherCondition">
-								<h3>Weather cond</h3>
+								<h3>Weather</h3>
+								słoneczko :) ZMIENIĆ
 							</div>
 						</div>
 					</div>

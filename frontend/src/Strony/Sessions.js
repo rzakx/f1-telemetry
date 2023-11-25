@@ -12,7 +12,7 @@ export default function Sessions(props){
     const [ filter, setFilter ] = useState({sessionType: -1, car: -1, dateFrom: null, dateTo: null, track: -1});
 
     const deleteSession = (id) => {
-        Axios.post(gb.backendIP+"deleteSession/"+localStorage.getItem("token")).then((res) => {
+        Axios.post(gb.backendIP+"deleteSession/"+localStorage.getItem("token")+"/"+id).then((res) => {
             if(!res['blad']){
                 console.log("Usunieto");
             } else {
@@ -46,12 +46,17 @@ export default function Sessions(props){
         } else {
             return(
                 sessionsData.data.map((row) => {
+                    const timestampRow = new Date(row.lastUpdate).getTime();
                     if((filter.sessionType != -1) && (filter.sessionType != row.sessionType)) return;
                     if((filter.track != -1) && (filter.track != row.trackId)) return;
                     if((filter.car != -1) && (filter.car != row.carId)) return;
                     console.log(new Date(row.lastUpdate), filter.dateFrom, filter.dateTo);
                     if((filter.dateFrom) && (filter.dateFrom > row.lastUpdate)) return;
-                    if((filter.dateTo) && (filter.dateTo < row.lastUpdate)) return;
+                    if(filter.dateTo){
+                        let filterDo = new Date(filter.dateTo);
+                        filterDo = filterDo.setDate(filterDo.getDate() + 1);
+                        if (filterDo < timestampRow) return;
+                    }
                     return(
                         <tr key={row.session_id}>
                             <td>{row.session_id}</td>
@@ -125,7 +130,7 @@ export default function Sessions(props){
 
             { showPopup &&
             <Confirmation 
-                message={`Wait! Do you really want to delete session with ID: ${showPopup}? This action is permanent!`}
+                message={`Wait! Do you really want to delete session ${showPopup}? This action is permanent!`}
                 cancelAction={() => setShowPopup(null)}
                 confirmAction={() => deleteSession(showPopup)}
             />}

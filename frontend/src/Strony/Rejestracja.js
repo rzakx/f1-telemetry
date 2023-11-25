@@ -89,7 +89,7 @@ export default function Rejestracja(){
         <div className="logowanieBg">
 			<div className="logowanie">
 				<div className="logowanieLewa">
-					<div className="logowanieLogo" />
+					<div className="logowanieLogo" style={{background: `url("/images/uczelnia.jpg")`}} />
 				</div>
 				<div className="logowaniePrawa">
 					<h1>Registration</h1>

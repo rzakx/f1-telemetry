@@ -41,22 +41,8 @@ const smtp = nodemailer.createTransport({
 	},
 	dkim:{
 				domainName: "rzak.pl",
-				keySelector: "1696249100.internal",
-				privateKey: `-----BEGIN RSA PRIVATE KEY-----
-		MIICXQIBAAKBgQDgdluxh6lRitzYf7W/b/57dvIm//yO2T9bwTSGfJf3CT7Z3WHh
-		6Nw7F2UIUsBhGRxMW5h+VIrfb3piEevj2XXbS0/JmjWnP+lRmEMh0SqAewG4p2WT
-		zDrFEC5tn3XflGj1PT5RbV9FgOgoG1qsuYEyStOu2Jkw25I+1QNYpqu60QIDAQAB
-		AoGAIkmSKiU59Q3MPHoNrkeSTRPXW6PA1aVT61UxC9YedIsCAc+ycwraEWC6ezIA
-		1xQ54WQggDOz3vutayunp++A9AxgPSfo5kBy7iTFafWR7Wa8rbvST+HdD/2cyhm9
-		Yxec3LOWRfb/s4Gj3CGmZ21pabAdVnR/qDl6OXJtyBt+0AECQQD3hNrW5uMsBGk8
-		r4ZTp9WoTFeM0qo6QimOOkHQxC9SRC5cvQfRp0nZovApkRd/IZ5NXDzgl2gwpgq8
-		DAu+VpMBAkEA6CdCU/dh+aCQgBrC+UFvJZxIAUg5elGM1nLpo7H/6i12mGsnXE8Z
-		kFKzZHatS72g/iF7yuUzmxULMP9rJui30QJAFWFfeeK1ys6SvJA43S8JMKFvipWD
-		6MZgSo3Ts5HOuJ91FcOqUjzOD0OY1S5YRj4EK5CFHa1WbaVaFgZAWW+nAQJBAOM5
-		2e/5iMoeYJEioIf7heCYMNogaTHSNDmKTCjPBp+dVCEncGUnfuwGJlRE3KXvu25C
-		M7qJ0JMQa93Pgn+Y9KECQQDBuGzxpDoT7sgei1CRKLDuWaH8SSKqqHiJkeAvgwtB
-		ro923X10vHTTpitlQLyn2yFbln7DR4x3kSiwcK8zQhgK
-		-----END RSA PRIVATE KEY-----`
+				keySelector: "6660249100.internal",
+				privateKey: process.env.DKIM
 			}
 });
 const register_available = true;

@@ -271,7 +271,7 @@ table img {
 .overallLapInfo svg { margin: 0 2px 0 6px; }
 .tableFastestLap { color: green; }
 .lapMinimapImg { position: relative; height: 300px; width: 300px; }
-.lapMinimapImg img { height: 100%; }
+.lapMinimapImg img { height: 100%; width: fit-content; }
 .lapMinimapCanvas { position: absolute; left: 0; top: 0; }
 .customTooltip { display: flex; flex-direction: column; padding: 10px; gap: 10px; background: rgba(20,20,20,0.5); color: #ccc; font-size: 1rem; }
 .customTooltip h1 { font-size: 1.1rem; }

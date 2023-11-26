@@ -40,10 +40,10 @@ const smtp = nodemailer.createTransport({
 		pass: process.env.EMAIL_PASS
 	},
 	dkim:{
-				domainName: "rzak.pl",
-				keySelector: "6660249100.internal",
-				privateKey: process.env.DKIM
-			}
+		domainName: "rzak.pl",
+		keySelector: "6660249100.internal",
+		privateKey: process.env.DKIM
+	}
 });
 const register_available = true;
 
@@ -294,104 +294,8 @@ const lapDataParser = new Parser().endianness("little").uint32le("m_lastLapTimeI
 const MarshalZoneParser = new Parser().endianness("little").floatle('m_zoneStart').int8('m_zoneFlag');
 const WeatherForecastSampleParser = new Parser().endianness("little").uint8('m_sessionType').uint8('m_timeOffset').uint8('m_weather').int8('m_trackTemperature').int8('m_trackTemperatureChange').int8('m_airTemperature').int8('m_airTemperatureChange').uint8('m_rainPercentage');
 
-//zrobic strukture zeby kazdy gracz mial wlasne dane w czasie rzeczywistym, aktualnie jeden kierowca bedzie nadpisywal GlownyHUD frontendu kazdemu uzytkownikowi
-// let telemetria = {
-// 	predkosc: 0,
-// 	gaz: 0,
-// 	kierownica: 0,
-// 	hamulec: 0,
-// 	sprzeglo: 0,
-// 	bieg: 0,
-// 	obroty: 0,
-// 	aktywowanyDRS: 0,
-// 	hamulecRL: 0,
-// 	hamulecRR: 0,
-// 	hamulecFL: 0,
-// 	hamulecFR: 0,
-// 	outRL: 0,
-// 	outRR: 0,
-// 	outFL: 0,
-// 	outFR: 0,
-// 	inRL: 0,
-// 	inRR: 0,
-// 	inFL: 0,
-// 	inFR: 0,
-// 	temperaturaSilnika: 0,
-// 	cisnienieRL: 0,
-// 	cisnienieRR: 0,
-// 	cisnienieFL: 0,
-// 	cisnienieFR: 0,
-// 	nawierzchniaRL: 0,
-// 	nawierzchniaRR: 0,
-// 	nawierzchniaFL: 0,
-// 	nawierzchniaFR: 0,
-// 	sugerowanyBieg: 0,
-// };
-// let statusPojazdu = {
-// 	trakcja: 0,
-// 	abs: 0,
-// 	trybPaliwo: 0,
-// 	balansHamulca: 0,
-// 	pitLimiter: 0,
-// 	paliwoTank: 0,
-// 	paliwoMax: 0,
-// 	paliwoOkr: 0,
-// 	obrotyMax: 0,
-// 	obrotyJalowe: 0,
-// 	dostepDRS: 0,
-// 	dystansDRS: 0,
-// 	typOpon: 0,
-// 	typOponWizualne: 0,
-// 	oponyOkrazenia: 0,
-// 	flaga: 0,
-// 	dostepnyERS: 0,
-// 	trybERS: 0,
-// 	zebranyERSmguk: 0,
-// 	zebranyERSmguh: 0,
-// 	wykorzystanyERS: 0,
-// 	pauzaSieciowa: 0,
-// };
-// let uszkodzenia = {
-// 	zuzycieRL: 0,
-// 	zuzycieRR: 0,
-// 	zuzycieFL: 0,
-// 	zuzycieFR: 0,
-// 	uszRL: 0,
-// 	uszRR: 0,
-// 	uszFL: 0,
-// 	uszFR: 0,
-// 	skrzydloFL: 0,
-// 	skrzydloFR: 0,
-// 	skrzydloTyl: 0,
-// 	podloga: 0,
-// 	dyfuzor: 0,
-// 	sidepod: 0,
-// 	usterkaDRS: 0,
-// 	usterkaERS: 0,
-// 	skrzynia: 0,
-// 	silnik: 0,
-// 	zuzycieMGUH: 0,
-// 	zuzycieES: 0,
-// 	zuzycieCE: 0,
-// 	zuzycieICE: 0,
-// 	zuzycieMGUK: 0,
-// 	zuzycieTC: 0,
-// 	wybuchSilnik: 0,
-// 	zatartySilnik: 0,
-// };
-// let daneOkrazenia = {
-// 	ostatnieOkr: 0,
-// 	aktualneOkr: 0,
-// 	sektor1: 0,
-// 	sektor2: 0,
-// 	aktualnaPozycja: 0,
-// 	numerOkrazenia: 0,
-// 	anulowaneOkrazenie: 0,
-// 	lapDistance: 0,
-// };
-
 /* główne dane są wysyłane cały czas co jakiś czas z jakąś cząsteczką informacji,
-a wystarczy nam około 5 pakietów by miec kompletne główne dane, reszta jest zbędna i tylko obciąża baze danych INSERT/UPDATE */
+a wystarczy nam około 5-10 pakietów by miec kompletne główne dane, reszta jest zbędna i tylko obciąża baze danych INSERT/UPDATE */
 let temporarySessionIds = { };
 const singleRecord = ["carId", "trackId", "sessionType"];
 const bufforData = new cache();
@@ -403,15 +307,18 @@ const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 	if(singleRecord.includes(typdanych)){
 		if(temporarySessionIds[id]) { temporarySessionIds[id] = temporarySessionIds[id] + 1; }
 		else { temporarySessionIds[id] = 1; }
+		console.log(id, temporarySessionIds[id]);
 		if(temporarySessionIds[id] > 10){
 			return;
 		}
-
+		console.log(id, typdanych, daneIn);
 		db.query(`INSERT INTO sesje (session_id, ip, ${typdanych}, user_id) VALUES (?, ?, ?, (SELECT id FROM konta WHERE ip = ?)) ON DUPLICATE KEY UPDATE ${typdanych} = ?`, [id, adresIP, daneIn, adresIP, daneIn], (er2, r2) => {
 			if(!er2){
 				if(r2.affectedRows < 1){
 					console.log("Niedodano sesji", id);
 				}
+			} else {
+				{ console.log("BŁĄD DODAWANIA SESJI", er2);}
 			}
 		});
 	} else {
@@ -823,13 +730,6 @@ serverUDP.on("message", (msg, info) => {
 			console.log("Nieznany pakiet");
 			break;
 	}
-	// io.emit("glowne", {
-	// 	daneOkrazenia: daneOkrazenia, GIT
-	// 	daneMotion: daneMotion, GIT
-	// 	telemetria: telemetria, GIT
-	// 	statusPojazdu: statusPojazdu, GIT
-	// 	uszkodzenia: uszkodzenia, GIT
-	// });
 });
 serverUDP.on("listening", () => {
 	const adr = serverUDP.address();

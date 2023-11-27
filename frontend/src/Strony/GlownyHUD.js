@@ -3,6 +3,7 @@ import io from "socket.io-client";
 import gb from "../GlobalVars.js";
 import Nawigacja from "../Nawigacja.js";
 import {ReactComponent as Hamulec} from "../brake.svg";
+import LoadingIndicator from "../Components/LoadingIndicator.js";
 const socket = io.connect('https://backend2.rzak.pl');
 
 export default function GlownyHUD() {
@@ -101,46 +102,34 @@ export default function GlownyHUD() {
 		nawierzchniaFR: 0,
 		sugerowanyBieg: 0,
 	});
-	const [ sprStorage, setSprStorage ] = useState(false);
-	const [ ostatniTimestamp, setOstatniTimestamp ] = useState(Date.now());
+	const [ sprData, setSprData ] = useState(false);
 	const okr = useRef(null);
 	const dpr = window.devicePixelRatio;
-	document.title = "f1-telemetry | Main";
-
-	const sprawdzStorage = () => {
-		const tmp = JSON.parse(localStorage.getItem('zapisane'));
-		if(tmp){
-			console.log("Wczytuje ostatnie zapisane dane");
-			setDane(tmp);
-		} else {
-			console.log("Brak zapisanych danych do wczytania");
-			setSprStorage(true);
-		}
-	};
-	const zapiszStorage = () => {
-		//console.log(Date.now(), "zapisuje");
-		localStorage.setItem('zapisane', JSON.stringify(daneTelemetria));
-		setOstatniTimestamp(Date.now());
-	};
+	document.title = "f1-telemetry | Realtime";
 
 	useEffect(() => {
 		// socket.on("glowne", (v) => {
 		socket.on(localStorage.getItem("login"), (v) => {
 			if(v.daneMotion){
 				rysuj(v.daneMotion.pozycjaX, v.daneMotion.pozycjaZ);
+				!sprData && setSprData(true);
 			}
 			if(v.daneOkrazenia){
 				if(v.daneOkrazenia.numerOkrazenia != v.daneOkrazenia.poprzedniNumerOkrazenia) noweOkr();
 				setDaneOkrazenia(v.daneOkrazenia);
+				!sprData && setSprData(true);
 			}
 			if(v.uszkodzenia){
 				setDaneUszkodzenia(v.uszkodzenia);
+				!sprData && setSprData(true);
 			}
 			if(v.statusPojazdu){
 				setDaneStatusPojazdu(v.statusPojazdu);
+				!sprData && setSprData(true);
 			}
 			if(v.telemetria){
 				setDaneTelemetria(v.telemetria);
+				!sprData && setSprData(true);
 			}
 		});
 	}, []);
@@ -189,122 +178,135 @@ export default function GlownyHUD() {
 		//console.log("NOWE OKR");
 	};
 
+	/* TODO:
+		- zrobic useParams dla loginu, zeby moc ogladac telemetrie kogos innego
+		- zrobic sprawdzenie czy uzytkownik ma dostep do czyjejs telemetrii
+			(raczej bedzie nowa tabela w bazie, np. ID, kto, komu) i tutaj zrobic liste np. ze zwrotem użytkowników "kto", gdzie "komu" jest naszym loginem
+			- jak zrobi sie podstrone dla Profilu użytkownika, to żeby tam użytkownik mógł nadawać i zabierać dostęp innym do Realtime hudu
+	*/
+
 	return (
 		<>
 			<Nawigacja />
-			<div className="screen"><div className="middle">
-				<div className="naglowek">
-					<div>
-						<h1>POSITION {daneOkrazenia.aktualnaPozycja}</h1>
-						<h1>LAP {daneOkrazenia.numerOkrazenia}</h1>
+			<div className="screen">
+				<div className="middle" style={{overflow: 'hidden'}}>
+					{ sprData ? "" :
+					<div className="realtimeBrak">
+						<LoadingIndicator text={`No data received yet 🙄\nStart driving or check telemetry settings.`} />
 					</div>
-					<div>
-						<h1>LAP TIME</h1>
-						<h3>CURRENT: {gb.lapTimeFormat(daneOkrazenia.aktualneOkr, true) || "NULL"}</h3>
-						<h3>PREVIOUS: {gb.lapTimeFormat(daneOkrazenia.ostatnieOkr, true) || "NULL"}</h3>
+					}
+					<div className="naglowek">
+						<div>
+							<h1>POSITION {daneOkrazenia.aktualnaPozycja}</h1>
+							<h1>LAP {daneOkrazenia.numerOkrazenia}</h1>
+						</div>
+						<div>
+							<h1>LAP TIME</h1>
+							<h3>CURRENT: {gb.lapTimeFormat(daneOkrazenia.aktualneOkr, true) || "NULL"}</h3>
+							<h3>PREVIOUS: {gb.lapTimeFormat(daneOkrazenia.ostatnieOkr, true) || "NULL"}</h3>
+						</div>
+						<div className="sektory">
+							<div className="sektor sektorZly">
+								<h1>S1</h1>
+								<h3>{daneOkrazenia.sektor1 ? gb.lapTimeFormat(daneOkrazenia.sektor1, false) : gb.lapTimeFormat(daneOkrazenia.aktualneOkr, false)}</h3>
+							</div>
+							<div className="sektor">
+								<h1>S2</h1>
+								<h3>{daneOkrazenia.sektor2 ? gb.lapTimeFormat(daneOkrazenia.sektor2, false) : (daneOkrazenia.sektor1 ? gb.lapTimeFormat(daneOkrazenia.aktualneOkr - daneOkrazenia.sektor1, false) : "") }</h3>
+							</div>
+							<div className="sektor">
+								<h1>S3</h1>
+								<h3>{(daneOkrazenia.sektor1 && daneOkrazenia.sektor2) ? gb.lapTimeFormat((daneOkrazenia.aktualneOkr - daneOkrazenia.sektor1 - daneOkrazenia.sektor2), false) : ""}</h3>
+							</div>
+						</div>
 					</div>
-					<div className="sektory">
-						<div className="sektor sektorZly">
-							<h1>S1</h1>
-							<h3>{daneOkrazenia.sektor1 ? gb.lapTimeFormat(daneOkrazenia.sektor1, false) : gb.lapTimeFormat(daneOkrazenia.aktualneOkr, false)}</h3>
+					<div className="glowne">
+						<div className="slupki">
+							<div className="slupek">
+								<div className="slupekTlo"><div className="slupekSprzeglo" style={{transform: procentSlupek(daneTelemetria.sprzeglo/100)}}/></div>
+								<div className="slupekTekst">Clutch<br/>{parseInt(daneTelemetria.sprzeglo || 0)}%</div>
+							</div>
+							<div className="slupek">
+								<div className="slupekTlo"><div className="slupekGaz" style={{transform: procentSlupek(daneTelemetria.gaz)}}/></div>
+								<div className="slupekTekst">Gas<br/>{parseInt(daneTelemetria.gaz*100 || 0)}%</div>
+							</div>
+							<div className="slupek">
+								<div className="slupekTlo"><div className="slupekHamulec" style={{transform: procentSlupek(daneTelemetria.hamulec)}}/></div>
+								<div className="slupekTekst">Brake<br />{parseInt(daneTelemetria.hamulec*100 || 0)}%</div>
+							</div>
 						</div>
-						<div className="sektor">
-							<h1>S2</h1>
-							<h3>{daneOkrazenia.sektor2 ? gb.lapTimeFormat(daneOkrazenia.sektor2, false) : (daneOkrazenia.sektor1 ? gb.lapTimeFormat(daneOkrazenia.aktualneOkr - daneOkrazenia.sektor1, false) : "") }</h3>
+						<div className="kierownica">
+							<h4>STEERING WHEEL<br />{parseInt(daneTelemetria.kierownica*360/2)}°</h4>
+							<div className="kierownicaImg" style={{rotate: `${parseInt(daneTelemetria.kierownica*360/2)}deg`}}/>
 						</div>
-						<div className="sektor">
-							<h1>S3</h1>
-							<h3>{(daneOkrazenia.sektor1 && daneOkrazenia.sektor2) ? gb.lapTimeFormat((daneOkrazenia.aktualneOkr - daneOkrazenia.sektor1 - daneOkrazenia.sektor2), false) : ""}</h3>
+						<div className="inne">
+							<h1>{daneTelemetria.predkosc} KM/H</h1>
+							<h2>GEAR {daneTelemetria.bieg}</h2>
+							<h5>{daneTelemetria.obroty} RPM</h5>
+							<br />
+							<h4>Brake bias: {daneStatusPojazdu.balansHamulca}%</h4>
+						</div>
+						<div className="inne">
+							<h5>ERS Deploy: {gb.nazwaTrybuERS[daneStatusPojazdu.trybERS]}</h5>
+							<h4>ERS Battery: {daneStatusPojazdu.dostepnyERS ? (daneStatusPojazdu.dostepnyERS/40000).toFixed(1) : 0}%</h4>
+							<h6>{daneStatusPojazdu.dostepnyERS ? parseInt(daneStatusPojazdu.dostepnyERS/1000) : 0} kJ ( used this lap: {parseInt(daneStatusPojazdu.wykorzystanyERS/1000)} kJ )</h6>
+							<hr />
+							<h5>Fuel Mix: {gb.trybPaliwo[daneStatusPojazdu.trybPaliwo]}</h5>
+							<h4>Fuel tank: {daneStatusPojazdu.paliwoTank ? daneStatusPojazdu.paliwoTank.toFixed(2) : 0}kg</h4>
+							<h6>~{daneStatusPojazdu.paliwoOkr ? daneStatusPojazdu.paliwoOkr.toFixed(2) : 0} laps</h6>
+						</div>
+					</div>
+					<div className="glowne">
+					<div className="bolid">
+						<div className="bolidFL">
+							<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecFL} °C</div>
+							<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inFL} °C</div>
+							<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outFL} °C</div>
+						</div>
+						<div className="bolidFR">
+							<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecFR} °C</div>
+							<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inFR} °C</div>
+							<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outFR} °C</div>
+						</div>
+						<div className="bolidRL">
+							<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecRL} °C</div>
+							<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inRL} °C</div>
+							<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outRL} °C</div>
+						</div>
+						<div className="bolidRR">
+							<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecRR} °C</div>
+							<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inRR} °C</div>
+							<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outRR} °C</div>
+						</div>
+						<div className="bolidEngine">
+							Engine: {daneTelemetria.temperaturaSilnika}°C
+						</div>
+					</div>
+						<div>
+							<h1>Car Data</h1>
+							Tyre age: {daneStatusPojazdu.oponyOkrazenia} laps<br />
+							Tyre type: {gb.typOpon[daneStatusPojazdu.typOpon]} ({gb.typOponWizualnie[daneStatusPojazdu.typOponWizualne]})<br />
+							Tyre wear: {daneUszkodzenia.uszRL}% {daneUszkodzenia.uszRR}% {daneUszkodzenia.uszFL}% {daneUszkodzenia.uszFR}%<br />
+							<br />
+							Front Wing Damage: Left {daneUszkodzenia.skrzydloFL}%, Right {daneUszkodzenia.skrzydloFR}%<br />
+							Rear Wing Damage: {daneUszkodzenia.skrzydloTyl}%<br />
+							Floor Damage: {daneUszkodzenia.podloga}%<br />
+							Sidepod Damage: {daneUszkodzenia.sidepod}%<br />
+							Diffusor Damage: {daneUszkodzenia.dyfuzor}%<br />
+						</div>
+					</div>
+					<div className="glowne">
+						<div>
+							<h3>Minimap</h3>
+							<canvas className="minimapa" ref={ustawReferencje} />
+						</div>
+						<div>
+							<h3>ENVIRONMENT INFORMATIONS</h3>
+							<h5>work in progress</h5>
 						</div>
 					</div>
 				</div>
-				<div className="glowne">
-					<div className="slupki">
-						<div className="slupek">
-							<div className="slupekTlo"><div className="slupekSprzeglo" style={{transform: procentSlupek(daneTelemetria.sprzeglo/100)}}/></div>
-							<div className="slupekTekst">Clutch<br/>{parseInt(daneTelemetria.sprzeglo || 0)}%</div>
-						</div>
-						<div className="slupek">
-							<div className="slupekTlo"><div className="slupekGaz" style={{transform: procentSlupek(daneTelemetria.gaz)}}/></div>
-							<div className="slupekTekst">Gas<br/>{parseInt(daneTelemetria.gaz*100 || 0)}%</div>
-						</div>
-						<div className="slupek">
-							<div className="slupekTlo"><div className="slupekHamulec" style={{transform: procentSlupek(daneTelemetria.hamulec)}}/></div>
-							<div className="slupekTekst">Brake<br />{parseInt(daneTelemetria.hamulec*100 || 0)}%</div>
-						</div>
-					</div>
-					<div className="kierownica">
-						<h4>STEERING WHEEL<br />{parseInt(daneTelemetria.kierownica*360/2)}°</h4>
-						<div className="kierownicaImg" style={{rotate: `${parseInt(daneTelemetria.kierownica*360/2)}deg`}}/>
-					</div>
-					<div className="inne">
-						<h1>{daneTelemetria.predkosc} KM/H</h1>
-						<h2>GEAR {daneTelemetria.bieg}</h2>
-						<h5>{daneTelemetria.obroty} RPM</h5>
-						<br />
-						<h4>Brake bias: {daneStatusPojazdu.balansHamulca}%</h4>
-					</div>
-					<div className="inne">
-						<h5>ERS Deploy: {gb.nazwaTrybuERS[daneStatusPojazdu.trybERS]}</h5>
-						<h4>ERS Battery: {daneStatusPojazdu.dostepnyERS ? (daneStatusPojazdu.dostepnyERS/40000).toFixed(1) : 0}%</h4>
-						<h6>{daneStatusPojazdu.dostepnyERS ? parseInt(daneStatusPojazdu.dostepnyERS/1000) : 0} kJ ( used this lap: {parseInt(daneStatusPojazdu.wykorzystanyERS/1000)} kJ )</h6>
-						<hr />
-						<h5>Fuel Mix: {gb.trybPaliwo[daneStatusPojazdu.trybPaliwo]}</h5>
-						<h4>Fuel tank: {daneStatusPojazdu.paliwoTank ? daneStatusPojazdu.paliwoTank.toFixed(2) : 0}kg</h4>
-						<h6>~{daneStatusPojazdu.paliwoOkr ? daneStatusPojazdu.paliwoOkr.toFixed(2) : 0} laps</h6>
-					</div>
-				</div>
-				<div className="glowne">
-				<div className="bolid">
-					<div className="bolidFL">
-						<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecFL} °C</div>
-						<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inFL} °C</div>
-						<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outFL} °C</div>
-					</div>
-					<div className="bolidFR">
-						<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecFR} °C</div>
-						<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inFR} °C</div>
-						<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outFR} °C</div>
-					</div>
-					<div className="bolidRL">
-						<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecRL} °C</div>
-						<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inRL} °C</div>
-						<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outRL} °C</div>
-					</div>
-					<div className="bolidRR">
-						<div className="bolidRow"><Hamulec />{daneTelemetria.hamulecRR} °C</div>
-						<div className="bolidRow"><div className="bolidIN" /> {daneTelemetria.inRR} °C</div>
-						<div className="bolidRow"><div className="bolidOUT" /> {daneTelemetria.outRR} °C</div>
-					</div>
-					<div className="bolidEngine">
-						Engine: {daneTelemetria.temperaturaSilnika}°C
-					</div>
-				</div>
-					<div>
-						<h1>Car Data</h1>
-						Tyre age: {daneStatusPojazdu.oponyOkrazenia} laps<br />
-						Tyre type: {gb.typOpon[daneStatusPojazdu.typOpon]} ({gb.typOponWizualnie[daneStatusPojazdu.typOponWizualne]})<br />
-						Tyre wear: {daneUszkodzenia.uszRL}% {daneUszkodzenia.uszRR}% {daneUszkodzenia.uszFL}% {daneUszkodzenia.uszFR}%<br />
-						<br />
-						Front Wing Damage: Left {daneUszkodzenia.skrzydloFL}%, Right {daneUszkodzenia.skrzydloFR}%<br />
-						Rear Wing Damage: {daneUszkodzenia.skrzydloTyl}%<br />
-						Floor Damage: {daneUszkodzenia.podloga}%<br />
-						Sidepod Damage: {daneUszkodzenia.sidepod}%<br />
-						Diffusor Damage: {daneUszkodzenia.dyfuzor}%<br />
-					</div>
-				</div>
-				<div className="glowne">
-					<div>
-						<h3>Minimap</h3>
-						<canvas className="minimapa" ref={ustawReferencje} />
-					</div>
-					<div>
-						<h3>ENVIRONMENT INFORMATIONS</h3>
-						<h5>work in progress</h5>
-					</div>
-				</div>
-				{ (ostatniTimestamp + 1000*30 < Date.now()) && zapiszStorage() }
-			</div></div>
+			</div>
 		</>
 	);
 }

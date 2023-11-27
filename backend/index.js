@@ -297,6 +297,8 @@ const WeatherForecastSampleParser = new Parser().endianness("little").uint8('m_s
 /* główne dane są wysyłane cały czas co jakiś czas z jakąś cząsteczką informacji,
 a wystarczy nam około 5-10 pakietów by miec kompletne główne dane, reszta jest zbędna i tylko obciąża baze danych INSERT/UPDATE */
 let temporarySessionIds = { };
+//przechowywanie wartosci pogody dla okrazenia dla sesji
+let weatherLapSession = {};
 const singleRecord = ["carId", "trackId", "sessionType"];
 const bufforData = new cache();
 const przechowujSesje = async (id, ramka, typdanych, daneIn, adresIP) => {
@@ -307,7 +309,6 @@ const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 	if(singleRecord.includes(typdanych)){
 		if(temporarySessionIds[id]) { temporarySessionIds[id] = temporarySessionIds[id] + 1; }
 		else { temporarySessionIds[id] = 1; }
-		console.log(id, temporarySessionIds[id]);
 		if(temporarySessionIds[id] > 10){
 			return;
 		}
@@ -705,6 +706,33 @@ serverUDP.on("message", (msg, info) => {
 		case 632:
 			//console.log("Sesja");
 			const sesjaParser = new Parser().endianness('little').nest('m_header', {type: headerParser}).uint8('m_weather').int8('m_trackTemperature').int8('m_airTemperature').uint8('m_totalLaps').uint16le('m_trackLength').uint8('m_sessionType').int8('m_trackId').uint8('m_formula').uint16le('m_sessionTimeLeft').uint16le('m_sessionDuration').uint8('m_pitSpeedLimit').uint8('m_gamePaused').uint8('m_isSpectating').uint8('m_spectatorCarIndex').uint8('m_sliProNativeSupport').uint8('m_numMarshalZones').array('m_marshalZones', {length: 21, type: MarshalZoneParser}).uint8('m_safetyCarStatus').uint8('m_networkGame').uint8('m_numWeatherForecastSamples').array('m_weatherForecastSamples', {length: 56, type: WeatherForecastSampleParser}).uint8('m_forecastAccuracy').uint8('m_aiDifficulty').uint32le('m_seasonLinkIdentifier').uint32le('m_weekendLinkIdentifier').uint32le('m_sessionLinkIdentifier').uint8('m_pitStopWindowIdealLap').uint8('m_pitStopWindowLatestLap').uint8('m_pitStopRejoinPosition').uint8('m_steeringAssist').uint8('m_brakingAssist').uint8('m_gearboxAssist').uint8('m_pitAssist').uint8('m_pitReleaseAssist').uint8('m_ERSAssist').uint8('m_DRSAssist').uint8('m_dynamicRacingLine').uint8('m_dynamicRacingLineType').uint8('m_gameMode').uint8('m_ruleSet').uint32le('m_timeOfDay').uint8('m_sessionLength').parse(msg);
+			let tmpW = false;
+			if(!weatherLapSession[sesjaParser.m_header.m_sessionUID]){
+				weatherLapSession[sesjaParser.m_header.m_sessionUID] = {
+					'id': sesjaParser.m_weather,
+					't': sesjaParser.m_trackTemperature,
+					'air': sesjaParser.m_airTemperature
+				};
+				tmpW = true;
+			}
+			if(!weatherLapSession[sesjaParser.m_header.m_sessionUID].id != sesjaParser.m_weather){
+				weatherLapSession[sesjaParser.m_header.m_sessionUID].id = sesjaParser.m_weather;
+				tmpW = true;
+			}
+			if(!weatherLapSession[sesjaParser.m_header.m_sessionUID].t != sesjaParser.m_trackTemperature){
+				weatherLapSession[sesjaParser.m_header.m_sessionUID].t = sesjaParser.m_trackTemperature;
+				tmpW = true;
+			}
+			if(!weatherLapSession[sesjaParser.m_header.m_sessionUID].air != sesjaParser.m_airTemperature){
+				weatherLapSession[sesjaParser.m_header.m_sessionUID].air = sesjaParser.m_airTemperature;
+				tmpW = true;
+			}
+			tmpW && przechowujSesje(
+				sesjaParser.m_header.m_sessionUID,
+				sesjaParser.m_header.m_frameIdentifier,
+				"weather",
+				weatherLapSession[sesjaParser.m_header.m_sessionUID]
+			);
 			przechowujSesje(
 				sesjaParser.m_header.m_sessionUID,
 				sesjaParser.m_header.m_frameIdentifier,

@@ -21,7 +21,7 @@ const GlobalVars = {
         'Wet': 'tirewet.svg',
         'Ultra Soft': 'tireultrasoft.svg'
     },
-    weatherType: ['Clear', 'Light clouds', 'Overcast', 'Light rain', 'Heavy rain', 'Storm'],
+    weatherType: ['Clear', 'Light clouds', 'Overcast', 'Light rain', 'Heavy rain', 'Storm', 'Unknown'],
     trybPaliwo: ["Lean", "Normal", "Rich"],
     typOpon: {
 		16: "C5",
@@ -123,6 +123,7 @@ const GlobalVars = {
         [1050, 600, 2100, 1300], //japan
         [800, 800, 1700, 1700], //hanoi
         [500, 500, 1200, 1000], //zandvoort
+        [950, 500, 1900, 1000], //imola
         [280, 620, 750, 1250], //portimao
         [370, 1450, 750, 2900], //saudi
         [800, 303, 1600, 642], //miami

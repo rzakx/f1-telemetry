@@ -4,10 +4,11 @@ import { useParams } from "react-router-dom";
 import Axios from "axios";
 import { useState, useRef } from "react";
 import LoadingIndicator from "../Components/LoadingIndicator.js";
-import { AreaChart, XAxis, YAxis, CartesianGrid, Area, Tooltip, ResponsiveContainer, Line, LineChart } from "recharts";
+import { AreaChart, XAxis, YAxis, CartesianGrid, Area, Tooltip, ResponsiveContainer } from "recharts";
 import { CgArrowRight } from "react-icons/cg";
 import { IoClose } from "react-icons/io5";
 import { RiCheckboxMultipleBlankFill, RiCheckboxMultipleBlankLine, RiSwordLine, RiBarChart2Fill } from "react-icons/ri";
+import { WiDaySunny, WiDaySunnyOvercast, WiCloud, WiShowers, WiRain, WiThunderstorm, WiNa} from "react-icons/wi";
 
 export default function ShowSessions(props){
 	const {sessionId} = useParams();
@@ -15,6 +16,8 @@ export default function ShowSessions(props){
 	const [refLapId, setRefLapId] = useState(localStorage.getItem("referenceLap") ? JSON.parse(localStorage.getItem("referenceLap")).id : null);
 	const [session, setSession] = useState({data: null, checkOwn: false, isChecking: false});
 	const [refLapData, setRefLapData] = useState({data: null});
+	const [blad, setBlad] = useState(false);
+	const initFrameNumber = useRef(null);
 	const canvasRef = useRef(null);
 	const imgRef = useRef(null);
 	const dpr = window.devicePixelRatio;
@@ -24,8 +27,32 @@ export default function ShowSessions(props){
 		window.location.href = "/sessions";
 	}
 
+	const wyswietlBlad = (text) => {
+		return(
+			<div className="confirmationPopupBg">
+				<div className="showSessionError">
+					<span>{text}</span>
+					<div>
+						<button onClick={() => {
+							setChartsLap(null);
+							setBlad(false);
+						}}>Understood!</button>
+						<button onClick={() => {
+							localStorage.removeItem('referenceLap');
+							setRefLapId(null);
+							setChartsLap(null);
+							setBlad(false);
+						}}>Remove Reference</button>
+					</div>
+				</div>
+			</div>
+		)
+	}
+
 	const drawPosition = (frame) => {
 		if(frame){
+			if(!session.data[frame].daneMotion) return;
+			if(!session.data[frame].daneMotion.pozycjaX || !session.data[frame].daneMotion.pozycjaZ) return;
 			const posX = session.data[frame].daneMotion.pozycjaX;
 			const posY = session.data[frame].daneMotion.pozycjaZ;
 			const canvasX = imgRef.current.width;
@@ -35,9 +62,10 @@ export default function ShowSessions(props){
 			ctx.clearRect(0,0,canvasX, canvasY);
 			ctx.beginPath();
 			let [correctX, correctY, viewX, viewY] = gb.minimapMappings[session.track];
+			// (pozycja + poczatekTrack) / koniecTrack  = jakis %
+			// jakis % * rozdzielczosc canvy
 			let tmpX = (posX+correctX)/viewX*canvasX;
 			let tmpY = (posY+correctY)/viewY*canvasY;
-			console.log("Rysuje", tmpX, tmpY);
 			ctx.arc(tmpX-3, tmpY-3, 6, 0, 6*Math.PI);
 			ctx.fillStyle = "#ffffff";
 			ctx.fill();
@@ -71,14 +99,19 @@ export default function ShowSessions(props){
 		return(
 			<div className="customTooltip">
 				<h1>Lap distance {label}m</h1>
-				{["speed", "speedRef"].includes(payload[0].name) && (payload[0].payload.speed != undefined) && <span>Speed: {payload[0].payload.speed}km/h</span>}
-				{["speed", "speedRef"].includes(payload[0].name) && (payload[0].payload.speedRef != undefined) && <span>Reference Speed: {payload[0].payload.speedRef}km/h</span>}
-				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.brake != undefined) && <span>Brake: {parseInt(payload[0].payload.brake)}%</span>}
-				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.brakeRef != undefined) && <span>Reference Brake: {parseInt(payload[0].payload.brakeRef)}%</span>}
-				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.throttle != undefined) && <span>Throttle: {parseInt(payload[0].payload.throttle)}%</span>}
-				{["brake", "brakeRef", "throttle", "throttleRef"].includes(payload[0].name) && (payload[0].payload.throttleRef != undefined) && <span>Reference Throttle: {parseInt(payload[0].payload.throttleRef)}%</span>}
-				{["steering", "steeringRef"].includes(payload[0].name) && (payload[0].payload.steering != undefined) && <span>Steering: {parseFloat(payload[0].payload.steering).toFixed(3)}</span>}
-				{["steering", "steeringRef"].includes(payload[0].name) && (payload[0].payload.steeringRef != undefined) && <span>Reference Steering: {parseFloat(payload[0].payload.steeringRef).toFixed(3)}</span>}
+				{["speed"].includes(payload[0].name) && (payload[0].payload.speed != undefined) && <span>Speed: {payload[0].payload.speed}km/h</span>}
+				{["speedRef"].includes(payload[0].name) && (payload[0].payload.speedRef != undefined) && <span>Reference Speed: {payload[0].payload.speedRef}km/h</span>}
+				{["brake", "throttle"].includes(payload[0].name) && (payload[0].payload.brake != undefined) && <span>Brake: {parseInt(payload[0].payload.brake)}%</span>}
+				{["brakeRef", "throttleRef"].includes(payload[0].name) && (payload[0].payload.brakeRef != undefined) && <span>Reference Brake: {parseInt(payload[0].payload.brakeRef)}%</span>}
+				{["brake", "throttle"].includes(payload[0].name) && (payload[0].payload.throttle != undefined) && <span>Throttle: {parseInt(payload[0].payload.throttle)}%</span>}
+				{["brakeRef", "throttleRef"].includes(payload[0].name) && (payload[0].payload.throttleRef != undefined) && <span>Reference Throttle: {parseInt(payload[0].payload.throttleRef)}%</span>}
+				{["steering"].includes(payload[0].name) && (payload[0].payload.steering != undefined) && <span>Steering: {parseFloat(payload[0].payload.steering).toFixed(3)}</span>}
+				{["steeringRef"].includes(payload[0].name) && (payload[0].payload.steeringRef != undefined) && <span>Reference Steering: {parseFloat(payload[0].payload.steeringRef).toFixed(3)}</span>}
+
+				{/* {["time", "timeRef", "delta"].includes(payload[0].name) && (payload[0].payload.time != undefined) && <span>Compared Lap Time Delta to Reference Lap Time: {gb.lapTimeFormat(payload[0].payload.time, false)}</span>} */}
+				{["time"].includes(payload[0].name) && (payload[0].payload.time != undefined) && <span>Compared Lap Time: {gb.lapTimeFormat(payload[0].payload.time, true)}</span>}
+				{["timeRef"].includes(payload[0].name) && (payload[0].payload.timeRef != undefined) && <span>Reference Lap Time: {gb.lapTimeFormat(payload[0].payload.timeRef, true)}</span>}
+				{["delta"].includes(payload[0].name) && (payload[0].payload.delta != undefined) && <><span>Compared Lap Time: {gb.lapTimeFormat(payload[0].payload.time, true)}</span><span>Reference Lap Time: {gb.lapTimeFormat(payload[0].payload.timeRef, true)}</span><span>Delta: {payload[0].payload.delta} ms</span></>}
 				{ drawPosition(payload[0].payload.frame) }
 			</div>
 		)
@@ -111,6 +144,25 @@ export default function ShowSessions(props){
 		setRefLapId(`${sessionId}-lap${lap}`);
 	};
 
+	const miniaturkaPogody = (id) => {
+		switch(id){
+			case 0:
+				return <><WiDaySunny style={{fill: '#ffe812', filter: 'drop-shadow(0 0 12px #ffe81255)'}}/></>
+			case 1:
+				return <><WiDaySunnyOvercast style={{fill: '#ffed81', filter: 'drop-shadow(0 0 12px #ffed8155)'}}/></>
+			case 2:
+				return <><WiCloud style={{fill: '#ccc', filter: 'drop-shadow(0 0 12px #cccccc55)'}}/></>
+			case 3:
+				return <><WiShowers style={{fill: '#85c3ff', filter: 'drop-shadow(0 0 12px #85c3ff55)'}}/></>
+			case 4:
+				return <><WiRain style={{fill: '#2d98ff', filter: 'drop-shadow(0 0 12px #2d98ff55)'}}/></>
+			case 5:
+				return <><WiThunderstorm style={{fill: '#0169cd', filter: 'drop-shadow(0 0 12px #0169cd55)'}}/></>
+			default:
+				return <><WiNa style={{fill: '#ed143d', filter: 'drop-shadow(0 0 12px #ed143d55)'}}/></>
+		}
+	}
+
 	const overallReady = () => {
 		document.getElementById("sessionsHref").classList.add("subPage")
 		let laps = {};
@@ -118,6 +170,7 @@ export default function ShowSessions(props){
 		let lapS1 = [];
 		let lapS2 = [];
 		for(const frame in session.data){
+			if(!initFrameNumber.current) initFrameNumber.current = parseInt(frame);
 			for(const typeOfData in session.data[frame]){
 				if(typeOfData == "daneOkrazenia"){
 					let lapNumber = session.data[frame][typeOfData]['numerOkrazenia'];
@@ -199,7 +252,9 @@ export default function ShowSessions(props){
 											time: time,
 											s1: lapS1[okr],
 											s2: lapS2[okr],
-											lapNumber: okr
+											lapNumber: okr,
+											car: session.car,
+											sessionid: sessionId
 										})
 									}}><RiBarChart2Fill /> Charts</button>
 									{(refLapId ? (
@@ -220,7 +275,9 @@ export default function ShowSessions(props){
 												s2: lapS2[okr],
 												lapNumber: okr,
 												compare: refLapId,
-												track: session.track
+												track: session.track,
+												car: session.car,
+												sessionid: sessionId
 											})	
 										}}><RiSwordLine /> Compare</button>
 									)
@@ -235,7 +292,9 @@ export default function ShowSessions(props){
 										s1: lapS1[okr],
 										s2: lapS2[okr],
 										lapNumber: okr,
-										track: session.track
+										track: session.track,
+										car: session.car,
+										sessionid: sessionId
 									}) }><RiCheckboxMultipleBlankFill /> Set Ref</button>
 									)}
 								</td>
@@ -261,6 +320,14 @@ export default function ShowSessions(props){
 		let positionMinFrame = session.data[chartsLap.minF].daneOkrazenia.aktualnaPozycja;
 		let chartsData = [];
 		//dataset for reference lap
+		let carRef = -1;
+		let tireRef = -1;
+		let tireCRef = -1;
+		let sessionidRef = -1;
+		let lapNumberRef = -1;
+		let timeLapRef = -1;
+		let s1ref = -1;
+		let s2ref = -1;
 		let topSpeedC = 0;
 		let avgSpeedC = 0;
 		let avgThrottleC = 0;
@@ -269,10 +336,14 @@ export default function ShowSessions(props){
 		let lastTireDegradationC = undefined;
 		let framesSource = undefined;
 		let goodToGo = false;
+		let pogodaFramesCounter = 0;
+		let pogodaId = 0;
+		let airTemp = 0;
+		let trackTemp = 0;
 
 		chartsLap.frames.map( frame => {
 			const frameData = session.data[frame];
-			// console.log(frameData);
+			//console.log(frameData);
 			if(frameData.daneOkrazenia.lapDistance < 0) return;
 			x++;
 			if(frameData.telemetria){
@@ -280,62 +351,89 @@ export default function ShowSessions(props){
 				avgSpeed = avgSpeed + frameData.telemetria.predkosc;
 				avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
 				avgBrake = avgBrake + frameData.telemetria.hamulec*100;
-				chartsData.push({frame: frame, gear: frameData.telemetria.bieg, drs: frameData.telemetria.aktywowanyDRS, steering: (frameData.telemetria.kierownica).toFixed(3), speed: frameData.telemetria.predkosc, throttle: (frameData.telemetria.gaz*100).toFixed(0), brake: (frameData.telemetria.hamulec*100).toFixed(0), lapDist: frameData.daneOkrazenia.lapDistance.toFixed(0)});
+				chartsData.push({
+					frame: frame,
+					gear: frameData.telemetria.bieg,
+					drs: frameData.telemetria.aktywowanyDRS,
+					steering: (frameData.telemetria.kierownica).toFixed(3),
+					speed: frameData.telemetria.predkosc,
+					throttle: (frameData.telemetria.gaz*100).toFixed(0),
+					brake: (frameData.telemetria.hamulec*100).toFixed(0),
+					time: frameData.daneOkrazenia.aktualneOkr,
+					lapDist: frameData.daneOkrazenia.lapDistance.toFixed(0)
+				});
 			}
 			if(frameData.uszkodzenia){
 				if(initTireDegradation === undefined) initTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
 				lastTireDegradation = (frameData.uszkodzenia.zuzycieFR + frameData.uszkodzenia.zuzycieFL + frameData.uszkodzenia.zuzycieRR + frameData.uszkodzenia.zuzycieRL)/4;
 			}
+			if(frameData.weather){
+				pogodaFramesCounter++;
+				pogodaId += frameData.weather.id;
+				airTemp += frameData.weather.air;
+				trackTemp += frameData.weather.t;
+			}
 		});
 
 		if(chartsLap.compare){
 			const comparedLapData = JSON.parse(localStorage.getItem("referenceLap")).data;
+			console.log(comparedLapData);
+			carRef = comparedLapData.car;
+			sessionidRef = comparedLapData.sessionid;
+			timeLapRef = comparedLapData.time;
+			s1ref = comparedLapData.s1;
+			s2ref = comparedLapData.s2;
+			tireRef = comparedLapData.tire;
+			tireCRef = comparedLapData.tireC;
+			lapNumberRef = comparedLapData.lapNumber;
 			if(chartsLap.track != comparedLapData.track) {
 				console.log("You're trying to compare laps from different tracks!");
-				//TODO: popup z wiadomoscia o roznych torach
+				setBlad("You're trying to compare laps from different tracks! 🤨");
+				return;
 			} else {
 				if(sessionId == refLapId.split("-")[0]){
 					console.log("Ta sama sesja");
 					framesSource = session;
 				} else {
 					console.log("Inna sesja");
-					Axios.post(gb.backendIP+"sessionDetails", {
-						requestUserId: localStorage.getItem("token"),
-						sessionId: JSON.parse(localStorage.getItem("referenceLap")).id.split("-")[0]
-					}).then((res) => {
-						if(!res.data['blad']) {
-							framesSource = {...res.data};
-						}
-					}).catch((err) => {
-						console.log("Session details: ERROR | ", err.message);
-					})
-					//TODO: co jesli porownywana sesja jest juz usunieta?
+					setBlad("Comparing laps from different sessions not available yet! 😕");
+					return;
+					// Axios.post(gb.backendIP+"sessionDetails", {
+					// 	requestUserId: localStorage.getItem("token"),
+					// 	sessionId: JSON.parse(localStorage.getItem("referenceLap")).id.split("-")[0]
+					// }).then((res) => {
+					// 	if(!res.data['blad']) {
+					// 		framesSource = {...res.data};
+					// 	}
+					// }).catch((err) => {
+					// 	console.log("Session details: ERROR | ", err.message);
+					// 	setBlad("Oops... Reference lap not available! 😕");
+					// 	return;
+					// })
 				}
-				/*
-					TODO:
-					dane szczegółowe okrazenia referencyjnego wrzucic do useState,
-					analize okrazenia referencyjnego robic dopiero jak useState sie ustawi
-				*/
 				comparedLapData.frames.map(frame => {
 					if(framesSource.data[frame].daneOkrazenia.lapDistance < 0) return;
 					xC++;
-					if(framesSource.data[frame].telemetria.predkosc > topSpeedC) topSpeedC = framesSource.data[frame].telemetria.predkosc;
-					avgSpeedC = avgSpeedC + framesSource.data[frame].telemetria.predkosc;
-					avgThrottleC = avgThrottleC + framesSource.data[frame].telemetria.gaz*100;
-					avgBrakeC = avgBrakeC + framesSource.data[frame].telemetria.hamulec*100;
-					chartsData.push({
-						frameRef: frame,
-						gearRef: framesSource.data[frame].telemetria.bieg,
-						drsRef: framesSource.data[frame].telemetria.aktywowanyDRS,
-						steeringRef: (framesSource.data[frame].telemetria.kierownica).toFixed(3),
-						speedRef: framesSource.data[frame].telemetria.predkosc,
-						throttleRef: (framesSource.data[frame].telemetria.gaz*100).toFixed(0),
-						brakeRef: (framesSource.data[frame].telemetria.hamulec*100).toFixed(0),
-						lapDist: (framesSource.data[frame].daneOkrazenia.lapDistance).toFixed(0)
-					});
+					if(framesSource.data[frame].telemetria){
+						if(framesSource.data[frame].telemetria.predkosc > topSpeedC) topSpeedC = framesSource.data[frame].telemetria.predkosc;
+						avgSpeedC = avgSpeedC + framesSource.data[frame].telemetria.predkosc;
+						avgThrottleC = avgThrottleC + framesSource.data[frame].telemetria.gaz*100;
+						avgBrakeC = avgBrakeC + framesSource.data[frame].telemetria.hamulec*100;
+						chartsData.push({
+							frameRef: frame,
+							gearRef: framesSource.data[frame].telemetria.bieg,
+							drsRef: framesSource.data[frame].telemetria.aktywowanyDRS,
+							steeringRef: (framesSource.data[frame].telemetria.kierownica).toFixed(3),
+							speedRef: framesSource.data[frame].telemetria.predkosc,
+							throttleRef: (framesSource.data[frame].telemetria.gaz*100).toFixed(0),
+							brakeRef: (framesSource.data[frame].telemetria.hamulec*100).toFixed(0),
+							timeRef: framesSource.data[frame].daneOkrazenia.aktualneOkr,
+							lapDist: (framesSource.data[frame].daneOkrazenia.lapDistance).toFixed(0)
+						});
+					}
 					if(framesSource.data[frame].uszkodzenia){
-						if(initTireDegradationC === undefined) initTireDegradationC = (framesSource.data[frame].uszkodzenia.zuzycieFR + framesSource.data[frame].uszkodzenia.zuzycieFL + framesSource.data[frame].uszkodzenia.zuzycieRR + framesSource.data[frame].uszkodzenia.zuzycieRL)/4;
-						lastTireDegradationC = (framesSource.data[frame].uszkodzenia.zuzycieFR + framesSource.data[frame].uszkodzenia.zuzycieFL + framesSource.data[frame].uszkodzenia.zuzycieRR + framesSource.data[frame].uszkodzenia.zuzycieRL)/4;
+						if(initTireDegradationC === undefined) initTireDegradationC = (framesSource.data[frame].uszkodzenia.uszFR + framesSource.data[frame].uszkodzenia.uszFL + framesSource.data[frame].uszkodzenia.uszRR + framesSource.data[frame].uszkodzenia.uszRL)/4;
+						lastTireDegradationC = (framesSource.data[frame].uszkodzenia.uszFR + framesSource.data[frame].uszkodzenia.uszFL + framesSource.data[frame].uszkodzenia.uszRR + framesSource.data[frame].uszkodzenia.uszRL)/4;
 					}
 				});
 				goodToGo = true;
@@ -364,7 +462,6 @@ export default function ShowSessions(props){
 			};
 
 			for(let iter = 1; iter < chartsData.length-1; iter++){
-				console.log(chartsData[iter]);
 				if(chartsData[iter].speed === undefined) chartsData[iter].speed = estimUnknown(iter, "speed");
 				if(chartsData[iter].speedRef === undefined) chartsData[iter].speedRef = estimUnknown(iter, "speedRef");
 				if(chartsData[iter].brake === undefined) chartsData[iter].brake = estimUnknown(iter, "brake");
@@ -373,18 +470,46 @@ export default function ShowSessions(props){
 				if(chartsData[iter].throttleRef === undefined) chartsData[iter].throttleRef = estimUnknown(iter, "throttleRef");
 				if(chartsData[iter].steering === undefined) chartsData[iter].steering = estimUnknown(iter, "steering");
 				if(chartsData[iter].steeringRef === undefined) chartsData[iter].steeringRef = estimUnknown(iter, "steeringRef");
+				if(chartsData[iter].time === undefined) chartsData[iter].time = estimUnknown(iter, "time");
+				if(chartsData[iter].timeRef === undefined) chartsData[iter].timeRef = estimUnknown(iter, "timeRef");
+				// chartsData[iter].time = chartsData[iter].timeRef - chartsData[iter].time;
+				// console.log(chartsData[iter].time, chartsData[iter].timeRef);
+			}
+			for(let iter = 1; iter < chartsData.length; iter++){
+				chartsData[iter].delta = chartsData[iter].time - chartsData[iter].timeRef;
 			}
 		}
 
-		console.log(chartsData);
+		//console.log(chartsData);
 
 		/*
 		todo:
 		- reszta wykresow
-		- napisac funkcje wychwyc bledy
-		- css
-		- car damage check
+		- poprawic CSS minimapy dla np. Miami, bo canva zle rysuje
 		*/
+
+		//jesli nie ma w tym okrazeniu ramki z pogodą to znaczy ze nie bylo zmian wzgledem poprzednich ramek np. z poprzedniego okrazenia
+		//wyciagnijmy ja z poprzednich okrazen
+		let tmpFrame = chartsLap.minF;
+		//przeiteruj od poczatku ramki tego okrazenia wstecz az do pierwszej ramki tej sesji
+		while(!pogodaFramesCounter && tmpFrame > initFrameNumber){
+			if(session.data[tmpFrame]){
+				if(session.data[tmpFrame].weather){
+					pogodaFramesCounter++;
+					pogodaId += session.data[tmpFrame].weather.id;
+					airTemp += session.data[tmpFrame].weather.air;
+					trackTemp += session.data[tmpFrame].weather.t;
+				} else {
+					tmpFrame--;
+				}
+			} else {
+				tmpFrame--;
+			}
+		}
+		//usrednij pogode i temperatury otoczenia bolidu
+		const mainWeather = pogodaFramesCounter ? Math.round((pogodaId/pogodaFramesCounter)) : 6;
+		const mainAirTemp = pogodaFramesCounter ? (airTemp/pogodaFramesCounter).toFixed(1) : -1;
+		const mainTrackTemp = pogodaFramesCounter ? (trackTemp/pogodaFramesCounter).toFixed(1) : -1;
 		
 		return(
 			<div className="lapDetails">
@@ -392,13 +517,14 @@ export default function ShowSessions(props){
 					imgRef.current = null;
 					canvasRef.current = null;
 					setChartsLap(null);
-				}}><IoClose /> Close</button>
+				}}>EXIT</button>
 				<div className="lapDetailsInfo">
 					<div className="overallLap">
-						<div className="overallLapHeader">
+						{/* INFO POJEDYNCZEGO / POROWNYWANEGO */}
+						<div className="overallLapHeader" style={{background: chartsLap.compare ? '#001521' : ""}}>
 							<div className="overallLapInfo">
 								<p>Session {sessionId}</p>
-								<span>Lap {chartsLap.lapNumber} Position {(positionMaxFrame !== positionMinFrame) ? positionMinFrame : positionMaxFrame} {(positionMaxFrame !== positionMinFrame) && <><CgArrowRight /> {positionMaxFrame}</>}</span>
+								<span>{chartsLap.compare ? <b>Compared </b>: ""}Lap {chartsLap.lapNumber} Position {(positionMaxFrame !== positionMinFrame) ? positionMinFrame : positionMaxFrame} {(positionMaxFrame !== positionMinFrame) && <><CgArrowRight /> {positionMaxFrame}</>}</span>
 							</div>
 							<div className="overallLapSectors">
 								<span>LAP | {gb.lapTimeFormat(chartsLap.time, true)}</span>
@@ -407,33 +533,67 @@ export default function ShowSessions(props){
 								<span>S3 | {gb.lapTimeFormat(chartsLap.time - chartsLap.s1 - chartsLap.s2, false)}</span>
 							</div>
 						</div>
-						<div className="overallLapRest">
-							<img style={{width: 340, height: 'fit-content', alignSelf: 'center'}} src={"/images/"+gb.carImages[session.car]} />
-							<div className="pionowaKreska"/>
+						<div className="overallLapRest" style={{background: chartsLap.compare ? '#001521' : ""}}>
+							<img style={{width: 310, height: 'fit-content', alignSelf: 'center'}} src={"/images/"+gb.carImages[session.car]} />
 							<div className="lapTireType">
-								<h3>Tire type</h3>
 								<img src={"/images/"+gb.tireImages[chartsLap.tire]} />
-								<b>{chartsLap.tire} [{chartsLap.tireC}]</b>
+								<div style={{display: "flex", flexDirection: "column"}}>
+									<b>Tire type</b>
+									<b>{chartsLap.tire} [{chartsLap.tireC}]</b>
+								</div>
 							</div>
-							<div className="pionowaKreska"/>
 							<div className="lapWeatherCondition">
-								<h3>Weather</h3>
-								słoneczko :) ZMIENIĆ
+								{miniaturkaPogody(mainWeather)}
+								<div style={{display: "flex", flexDirection: "column"}}>
+									<b>Weather: {gb.weatherType[mainWeather]}</b>
+									{(mainAirTemp == -1) ? "" : <b>Air: {mainAirTemp} °C</b> }
+									{(mainTrackTemp == -1) ? "" : <b>Track: {mainTrackTemp} °C</b> }
+								</div>
 							</div>
 						</div>
+						{/* INFO REFERENCYJNE */}
+						{chartsLap.compare ?
+						<><div className="overallLapHeader" style={{background: '#000b0c', borderTop: '2px solid white'}}>
+							<div className="overallLapInfo">
+								<p>Session {sessionidRef}</p>
+								<span><b>Reference</b> Lap {lapNumberRef} Position ???</span>
+							</div>
+							<div className="overallLapSectors">
+								<span>LAP | {gb.lapTimeFormat(timeLapRef, true)}</span>
+								<span>S1 | {gb.lapTimeFormat(s1ref, false)}</span>
+								<span>S2 | {gb.lapTimeFormat(s2ref, false)}</span>
+								<span>S3 | {gb.lapTimeFormat(timeLapRef - s1ref - s2ref, false)}</span>
+							</div>
+						</div>
+						<div className="overallLapRest" style={{background: '#000b0c'}}>
+							<img style={{width: 310, height: 'fit-content', alignSelf: 'center'}} src={"/images/"+gb.carImages[carRef]} />
+							<div className="lapTireType">
+								<img src={"/images/"+gb.tireImages[tireRef]} />
+								<div style={{display: "flex", flexDirection: "column"}}>
+									<b>Tire type</b>
+									<b>{tireRef} [{tireCRef}]</b>
+								</div>
+							</div>
+							<div className="lapWeatherCondition">
+								{miniaturkaPogody(mainWeather)}
+								<div style={{display: "flex", flexDirection: "column"}}>
+									<b>Weather: {gb.weatherType[mainWeather]}</b>
+									{(mainAirTemp == -1) ? "" : <b>Air: {mainAirTemp} °C</b> }
+									{(mainTrackTemp == -1) ? "" : <b>Track: {mainTrackTemp} °C</b> }
+								</div>
+							</div>
+						</div></> : ""}
 					</div>
-					<div className="pionowaKreska" />
 					<div className="lapTelemetry">
 						<h3>Lap Telemetry</h3>
 						<span>Top speed {topSpeed} kmh</span>
 						<span>Average speed {(avgSpeed/x).toFixed(1)} kmh</span>
 						<span>Average gas throttle input {(avgThrottle/x).toFixed(1)}%</span>
 						<span>Average brake input {(avgBrake/x).toFixed(0)}%</span>
-						<span>Tire degradation {(lastTireDegradation - initTireDegradation).toFixed(2)}%</span>
+						<span>Tire wear: {initTireDegradation.toFixed(2)}% <CgArrowRight style={{verticalAlign: 'middle'}}/> {lastTireDegradation.toFixed(2)}% ({(lastTireDegradation - initTireDegradation).toFixed(2)}%)</span>
 						<span>ERS burnt {session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS} Joules</span>
 						<span>Car damage: yes/no</span>
 					</div>
-					<div className="pionowaKreska" />
 					<div className="lapMinimap">
 						<span>{gb.trackIds[session.track]} + flaga</span>
 						<div className="lapMinimapImg">
@@ -442,9 +602,30 @@ export default function ShowSessions(props){
 						</div>
 					</div>
 				</div>
+				{ chartsLap.compare ?
+				<div className="deltaWykres">
+					<h3>Time Delta <sup>Compared Lap <CgArrowRight style={{verticalAlign: 'middle'}}/> Reference Lap</sup></h3>
+					<ResponsiveContainer>
+						<AreaChart syncId="charts" data={chartsData} margin={{left: 20, bottom: 0}}>
+							<defs>
+								<linearGradient id="speedColor" x1="0" y1="0" x2="0" y2="1">
+									<stop offset="5%" stopColor="#af7d00" stopOpacity={0.9}/>
+									<stop offset="95%" stopColor="#af7d00" stopOpacity={0.3}/>
+								</linearGradient>
+							</defs>
+							<XAxis dataKey="lapDist" tick={false}/>
+							<YAxis unit="ms" />
+							<CartesianGrid strokeDasharray="3 3" stroke="#aaa" strokeOpacity={0.1}/>
+							<Tooltip filterNull={false} content={<CustomToolTip />} />
+							<Area connectNulls type="monotone" dataKey="delta" strokeWidth={2} stroke="#af7d00" fill="url(#speedColor)" fillOpacity={1} />
+							<Area connectNulls type="monotone" dataKey="time" strokeWidth={2} stroke="#af7d00" fill="url(#speedColor)" fillOpacity={1} hide={true}/>
+							<Area connectNulls type="monotone" dataKey="timeRef" strokeWidth={2} stroke="#af7d00" fill="url(#speedColor)" fillOpacity={1} hide={true}/>
+						</AreaChart>
+					</ResponsiveContainer>
+				</div> : ""}
 				<div className="lapCharts" id="lapCharts">
-					<div className="lapChartsInside">
-						<h3>Speed</h3>
+					<div className="lapChartsInside" style={{background: chartsLap.compare ? '#001521' : ""}}>
+						{ chartsLap.compare ? <h3>Compared Speed</h3> : <h3>Speed</h3> }
 						<ResponsiveContainer className="lapChart">
 							<AreaChart syncId="charts" data={chartsData} margin={{left: 20, bottom: 0}}>
 								<defs>
@@ -460,7 +641,7 @@ export default function ShowSessions(props){
 								<Area connectNulls type="monotone" dataKey="speed" strokeWidth={2} stroke="#af7d00" fill="url(#speedColor)" fillOpacity={1} />
 							</AreaChart>
 						</ResponsiveContainer>
-						<h3>Throttle & Brake</h3>
+						{ chartsLap.compare ? <h3>Compared Throttle & Brake</h3> : <h3>Throttle & Brake</h3>}
 						<ResponsiveContainer className="lapChart">
 							<AreaChart syncId="charts" data={chartsData} margin={{left: 20}}>
 								<defs>
@@ -481,7 +662,7 @@ export default function ShowSessions(props){
 								<Area connectNulls type="monotone" dataKey="throttle" strokeWidth={2} stroke="#004600" fill="url(#throttleColor)" />
 							</AreaChart>
 						</ResponsiveContainer>
-						<h3>Steering</h3>
+						{chartsLap.compare ? <h3>Compared Steering</h3> : <h3>Steering</h3>}
 						<ResponsiveContainer className="lapChart">
 							<AreaChart syncId="charts" data={chartsData} margin={{left: 20}}>
 								<defs>
@@ -498,6 +679,64 @@ export default function ShowSessions(props){
 							</AreaChart>
 						</ResponsiveContainer>
 					</div>
+					{
+						chartsLap.compare ?
+						<div className="lapChartsInside" style={{background: '#000b0c'}}>
+						<h3>Reference Speed</h3>
+						<ResponsiveContainer className="lapChart">
+							<AreaChart syncId="charts" data={chartsData} margin={{left: 20, bottom: 0}}>
+								<defs>
+									<linearGradient id="speedColor" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="#af7d00" stopOpacity={0.9}/>
+										<stop offset="95%" stopColor="#af7d00" stopOpacity={0.3}/>
+									</linearGradient>
+								</defs>
+								<XAxis dataKey="lapDist" tick={false}/>
+								<YAxis unit="kmh" />
+								<CartesianGrid strokeDasharray="3 3" stroke="#aaa" strokeOpacity={0.1}/>
+								<Tooltip filterNull={false} content={<CustomToolTip />} />
+								<Area connectNulls type="monotone" dataKey="speedRef" strokeWidth={2} stroke="#af7d00" fill="url(#speedColor)" fillOpacity={1} />
+							</AreaChart>
+						</ResponsiveContainer>
+						<h3>Reference Throttle & Brake</h3>
+						<ResponsiveContainer className="lapChart">
+							<AreaChart syncId="charts" data={chartsData} margin={{left: 20}}>
+								<defs>
+									<linearGradient id="brakeColor" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="15%" stopColor="#6a0000" stopOpacity={1}/>
+										<stop offset="85%" stopColor="#080808" stopOpacity={0.4}/>
+									</linearGradient>
+									<linearGradient id="throttleColor" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="15%" stopColor="#004600" stopOpacity={1}/>
+										<stop offset="85%" stopColor="#080808" stopOpacity={0.4}/>
+									</linearGradient>
+								</defs>
+								<XAxis dataKey="lapDist" tick={false}/>
+								<YAxis unit="%" />
+								<CartesianGrid strokeDasharray="3 3" stroke="#aaa" strokeOpacity={0.1}/>
+								<Tooltip filterNull={false} content={<CustomToolTip />} />
+								<Area connectNulls type="monotone" dataKey="brakeRef" strokeWidth={2} stroke="#6a0000" fill="url(#brakeColor)" />
+								<Area connectNulls type="monotone" dataKey="throttleRef" strokeWidth={2} stroke="#004600" fill="url(#throttleColor)" />
+							</AreaChart>
+						</ResponsiveContainer>
+						<h3>Reference Steering</h3>
+						<ResponsiveContainer className="lapChart">
+							<AreaChart syncId="charts" data={chartsData} margin={{left: 20}}>
+								<defs>
+									<linearGradient id="steeringColor" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="5%" stopColor="dodgerblue" stopOpacity={0.9}/>
+										<stop offset="95%" stopColor="dodgerblue" stopOpacity={0.5}/>
+									</linearGradient>
+								</defs>
+								<XAxis dataKey="lapDist" tick={false}/>
+								<YAxis domain={[-1, 1]}/>
+								<CartesianGrid strokeDasharray="3 3" stroke="#aaa" strokeOpacity={0.1}/>
+								<Tooltip filterNull={false} content={<CustomToolTip />} />
+								<Area connectNulls type="monotone" dataKey="steeringRef" strokeWidth={2} stroke="dodgerblue" fill="url(#steeringColor)" fillOpacity={0.5} />
+							</AreaChart>
+						</ResponsiveContainer>
+					</div> : ""
+					}
 				</div>
 			</div>
 		);
@@ -509,8 +748,9 @@ export default function ShowSessions(props){
 			{ !session.isChecking && initCheck() }
 			<div className="screen">
 				{ session.checkOwn ? overallReady() : <LoadingIndicator text={`Loading data for session ${sessionId}`} /> }
-				{chartsLap && showCharts()}
+				{ (chartsLap && !blad) && showCharts()}
 			</div>
+			{ blad && wyswietlBlad(blad) }
 		</>
 	)
 };

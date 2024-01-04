@@ -8,7 +8,7 @@ export default function ResetHasla(props){
 	const [haslo, setHaslo] = useState(null);
     const [haslo2, setHaslo2] = useState(null);
 	const [blad, setBlad] = useState(false);
-	document.title = "f1-telemetry | Reset password";
+	document.title = "TrackVision - Reset password";
 
     const etap0 = () => {
         return(

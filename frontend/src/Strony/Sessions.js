@@ -7,6 +7,7 @@ import { useState } from "react";
 import { BsFillExclamationSquareFill, BsFillXSquareFill } from "react-icons/bs";
 
 export default function Sessions(props){
+    document.title = "TrackVision - Sessions";
     const [ showPopup, setShowPopup ] = useState(null);
     const [ sessionsData, setSessionsData ] = useState({data: null, checked: false, error: null});
     const [ filter, setFilter ] = useState({sessionType: -1, car: -1, dateFrom: null, dateTo: null, track: -1});
@@ -79,12 +80,12 @@ export default function Sessions(props){
         <>
             <Nawigacja />
             <div className="screen">
-                    <div className="screenHeader">
+                    <div className="screenHeader smoothIn">
                         <div className="screenHeaderTitle">
                             <h1 className="title">Sessions</h1>
                             <h3 className="title">Showing your detected sessions data</h3>
                         </div>
-                        <div className="sessionsFilters">
+                        <div className="sessionsFilters smoothIn">
                             <div className="row">
                                 <div className="sessionsFilter">
                                     <span>Track</span>
@@ -120,7 +121,7 @@ export default function Sessions(props){
                             </div>
                         </div>
                     </div>
-                    <div className="sessionsTable">
+                    <div className="sessionsTable smoothIn">
                         <table>
                             <thead><tr><th>Session ID</th><th>Session Type</th><th>Track</th><th>Car</th><th>Date</th><th>Action</th></tr></thead>
                             <tbody>{ sessionsData.checked ? showSessions() : checkSessions() }</tbody>

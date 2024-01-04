@@ -21,7 +21,7 @@ export default function ShowSessions(props){
 	const canvasRef = useRef(null);
 	const imgRef = useRef(null);
 	const dpr = window.devicePixelRatio;
-	document.title = `f1-telemetry | Session ${sessionId}`;
+	document.title = `TrackVision - Session ${sessionId}`;
 
 	if(!sessionId){
 		window.location.href = "/sessions";

@@ -6,7 +6,7 @@ export default function Logowanie(props){
 	const [haslo, setHaslo] = useState(null);
 	const [blad, setBlad] = useState(false);
 
-	document.title = "f1-telemetry | Log In";
+	document.title = "TrackVision - Log In";
 	const autoryzacja = async (e) => {
 		if(login && haslo){
 			if(login.length > 3 && login.length < 60 && haslo.length > 3 && haslo.length < 60){

@@ -5,6 +5,7 @@ import {
 	RiDashboardFill,
 	RiEqualizerFill,
 	RiPulseLine,
+	RiUserFill
 } from "react-icons/ri";
 import Axios from "axios";
 import { useState } from "react";
@@ -66,8 +67,13 @@ export default function Nawigacja() {
 						</NavLink>
 					</li>
 					<li>
-						<NavLink to="/setups">
+						<NavLink id="setupsHref" to="/setups">
 							<RiEqualizerFill /> Car setups
+						</NavLink>
+					</li>
+					<li>
+						<NavLink to="/profile">
+							<RiUserFill /> Profile
 						</NavLink>
 					</li>
 				</ul>

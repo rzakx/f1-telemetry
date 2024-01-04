@@ -105,7 +105,7 @@ export default function GlownyHUD() {
 	const [ sprData, setSprData ] = useState(false);
 	const okr = useRef(null);
 	const dpr = window.devicePixelRatio;
-	document.title = "f1-telemetry | Realtime";
+	document.title = "TrackVision - Realtime data";
 
 	useEffect(() => {
 		// socket.on("glowne", (v) => {

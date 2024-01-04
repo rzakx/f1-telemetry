@@ -283,6 +283,152 @@ appHTTP.post("/deleteSession/:token/:idsesji", (req, res) => {
 	});
 });
 
+appHTTP.post("/mainStats/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({error: "Invalid token"});
+		return;
+	}
+	let tmp = {sessionsO: 0, sessionsA: 0, setupsO: 0, setupsA: 0, queue: bufforData.getStats().keys, lastsession: null};
+	db.query("SELECT COUNT(*) as 'i' FROM `sesje`", (er, r) => {
+		if(!er)	tmp.sessionsA = r[0].i;
+		db.query("SELECT COUNT(*) as 'i' FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.params.token], (er2, r2) => {
+			if(!er2) tmp.sessionsO = r2[0].i;
+			if(tmp.sessionsO){
+				db.query("SELECT * FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?) ORDER BY `lastUpdate` DESC LIMIT 1", [req.params.token], (er3, r3) => {
+					console.log(r3[0]);
+					tmp.lastsession = r3[0];
+					res.send(tmp);
+				});
+			} else {
+				res.send(tmp);
+			}
+		});
+	});
+});
+appHTTP.post("/mainStatsFrames/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({error: "Invalid token"});
+		return;
+	}
+	let tmp = {own: 0, all: 0};
+	db.query("SELECT COUNT(*) as 'i' FROM `frames`", (er, r) => {
+		tmp.all = r[0].i;
+		if(req.body.haveSessions){
+			db.query("SELECT COUNT(*) as 'i' FROM `frames` WHERE `session_id` IN (SELECT `session_id` FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?))", [req.params.token], (er2, r2) => {
+				if(er2){
+					console.log(er2);
+				} else {
+					tmp.own = r2[0].i;
+				}
+				res.send(tmp);
+				return;
+			});
+		} else {
+			res.send(tmp);
+			return;
+		}
+	})
+});
+appHTTP.post("/setups/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({error: "Invalid token"});
+		return;
+	}
+	db.query("SELECT `setups`.`id` as 'id', `setups`.`track` as 'track', `setups`.`car` as 'car', `setups`.`weather` as 'weather', `setups`.`created` as 'created', `setups`.`type` as 'type', `konta`.`login` as 'login', `konta`.`avatar` as 'avatar' FROM `setups` LEFT JOIN `konta` ON `setups`.`author` = `konta`.`id` WHERE `author` = (SELECT `id` FROM `konta` WHERE `token` = ?) OR `public` = 1", [req.params.token], (er, r) => {
+		if(er){
+			res.send({error: "Database error"});
+			return;
+		}
+		if(r.length > 0){
+			let tmp = [];
+			r.forEach((w) => {
+				tmp.push(w);
+			});
+			res.send({data: tmp, error: null});
+			return;
+		} else {
+			res.send({data: null, error: "No setups available to show."});
+			return;
+		}
+	});
+});
+appHTTP.post("/setup/:token/:setupId", (req, res) => {
+	if(!req.params.token){
+		res.send({error: "Invalid token"});
+		return;
+	}
+	db.query("SELECT * FROM `setups` WHERE `id` = ? AND (`public` = 1 OR `author` = (SELECT `id` FROM `konta` WHERE `token` = ?))", [req.params.setupId, req.params.token], (er, r) => {
+		if(er){
+			res.send({error: "Database error "+er.errno});
+			return;
+		}
+		if(r.length > 0){
+			res.send({data: r[0]});
+			return;
+		} else {
+			res.send({error: "You don't have access to that car setup."});
+			return;
+		}
+	});
+});
+appHTTP.post("/deleteSetup/:token/:setupId", (req, res) => {
+	if(!req.params.token){
+		res.send({error: "Invalid token."});
+		return;
+	}
+	db.query("DELETE FROM `setups` WHERE `id` = ? AND `author` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.params.setupId, req.params.token], (er, r) => {
+		if(er){
+			console.log(er);
+			res.send({error: "Database error "+er.errno});
+			return;
+		}
+		if(r.affectedRows > 0){
+			res.send({odp: "Deleted"});
+			return;
+		} else {
+			res.send({error: "You don't have permission to delete that setup."});
+			return;
+		}
+	});
+});
+appHTTP.post("/updateSetup/:token/:setupId", (req, res) => {
+	if(!req.params.token){
+		res.send({error: "Invalid token."});
+		return;
+	}
+	db.query("UPDATE `setups` SET `type` = ?, `track` = ?, `car` = ?, `weather` = ?, `wingF` = ?, `wingR` = ?, `diffOn` = ?, `diffOff` = ?, `camberF` = ?, `camberR` = ?, `toeF` = ?, `toeR` = ?, `susF` = ?, `susR` = ?, `barF` = ?, `barR` = ?, `heightF` = ?, `heightR` = ?, `brakeP` = ?, `brakeB` = ?, `tireFR` = ?, `tireFL` = ?, `tireRR` = ?, `tireRL` = ?, `public` = ?, `fuel` = ? WHERE `id` = ? AND `author` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.body.type, req.body.track, req.body.car, req.body.weather, req.body.wingF, req.body.wingR, req.body.diffOn, req.body.diffOff, req.body.camberF, req.body.camberR, req.body.toeF, req.body.toeR, req.body.susF, req.body.susR, req.body.barF, req.body.barR, req.body.heightF, req.body.heightR, req.body.brakeP, req.body.brakeB, req.body.tireFR, req.body.tireFL, req.body.tireRR, req.body.tireRL, req.body.public, req.body.fuel, req.params.setupId, req.params.token], (er, r) => {
+		if(er){
+			console.log(er);
+			res.send({error: "Something went wrong. Your setup was not updated."});
+			return;
+		}
+		if(r.affectedRows > 0){
+			res.send({odp: "Setup succesfully updated."});
+			return;
+		} else {
+			res.send({error: "You don't have permission to change this setup."});
+			return;
+		}
+	})
+});
+appHTTP.post("/createSetup/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({error: "Invalid token."});
+		return;
+	}
+	db.query("INSERT INTO `setups` (`author`, `type`, `track`, `car`, `weather`, `wingF`, `wingR`, `diffOn`, `diffOff`, `camberF`, `camberR`, `toeF`, `toeR`, `susF`, `susR`, `barF`, `barR`, `heightF`, `heightR`, `brakeP`, `brakeB`, `tireFR`, `tireFL`, `tireRR`, `tireRL`, `public`, `fuel`) VALUES ((SELECT `id` FROM `konta` WHERE `token` = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [req.params.token, req.body.type, req.body.track, req.body.car, req.body.weather, req.body.wingF, req.body.wingR, req.body.diffOn, req.body.diffOff, req.body.camberF, req.body.camberR, req.body.toeF, req.body.toeR, req.body.susF, req.body.susR, req.body.barF, req.body.barR, req.body.heightF, req.body.heightR, req.body.brakeP, req.body.brakeB, req.body.tireFR, req.body.tireFL, req.body.tireRR, req.body.tireRL, req.body.public, req.body.fuel], (er, r) => {
+		if(er){
+			console.log(er);
+			res.send({error: "Something went wrong. Your setup was not created."});
+			return;
+		}
+		if(r.affectedRows > 0){
+			res.send({odp: r.insertId});
+			return;
+		}
+	})
+});
+
 /* Parsery */
 const headerParser = new Parser().endianness("little").uint16le("m_packetFormat").uint8("m_gameMajorVersion").uint8("m_gameMinorVersion").uint8("m_packetVersion").uint8("m_packetId").uint64le("m_sessionUID").floatle("m_sessionTime").uint32le("m_frameIdentifier").uint8("m_playerCarIndex").uint8("m_secondaryPlayerCarIndex");
 const uszkodzeniaDataParser = new Parser().endianness("little").array("m_tyresWear", { length: 4, type: new Parser().floatle("") }).array("m_tyresDamage", { length: 4, type: new Parser().uint8("") }).array("m_brakesDamage", { length: 4, type: new Parser().uint8("") }).uint8("m_frontLeftWingDamage").uint8("m_frontRightWingDamage").uint8("m_rearWingDamage").uint8("m_floorDamage").uint8("m_diffuserDamage").uint8("m_sidepodDamage").uint8("m_drsFault").uint8("m_ersFault").uint8("m_gearBoxDamage").uint8("m_engineDamage").uint8("m_engineMGUHWear").uint8("m_engineESWear").uint8("m_engineCEWear").uint8("m_engineICEWear").uint8("m_engineMGUKWear").uint8("m_engineTCWear").uint8("m_engineBlown").uint8("m_engineSeized");
@@ -336,7 +482,7 @@ const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 
 // "OCZYSZCZANIE" CACHE, (DANE LĄDUJĄ POWOLUTKU DO BAZY DANYCH)
 setInterval(() => {
-	let queryLimit = 2500; //limit operacji bazy danych w interwale
+	let queryLimit = 4000; //limit operacji bazy danych w interwale
 	let x = 0;
 	bufforData.keys() && bufforData.keys().map((key) => {
 		if(x >= queryLimit) return;

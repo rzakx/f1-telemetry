@@ -2,7 +2,7 @@ import { useState } from "react";
 import Axios from "axios";
 import gb from "../GlobalVars";
 export default function Rejestracja(){
-    document.title = "f1-telemetry | Register account";
+    document.title = "TrackVision - Sign up";
     const [login, setLogin] = useState(null);
     const [email, setEmail] = useState(null);
     const [haslo, setHaslo] = useState(null);

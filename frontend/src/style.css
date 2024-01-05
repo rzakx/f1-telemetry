@@ -637,3 +637,198 @@ div.mainBottomColumn div span:nth-child(2) { font-weight: bold;}
 }
 .setupProfile { display: inline-flex; text-decoration: none; font-weight: bold; color: dodgerblue; transition: all .4s ease; }
 .setupProfile:hover { color: goldenrod; letter-spacing: 1px;}
+/* PODSTRONA PROFIL */
+.wycentrujPion {
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.profilUzytkownika {
+	display: flex;
+    width: -moz-fit-content;
+    width: fit-content;
+    background: #161616;
+    padding: 20px;
+    height: 700px;
+    border: 2px solid #888;
+    box-shadow: 0 0 15px 13px #0c0c0c;
+    gap: 20px;
+    flex-direction: column;
+    position: relative;
+    min-width: 700px;
+}
+.profilUzytkownika .profilGora { display: flex; gap: 20px; }
+.profilUzytkownika .profilAwatar, .edytorProfilu .edycjaAwatarBlob {
+	width: 205px;
+    height: 205px;
+    box-shadow: 0 0 10px 0 #111, inset 0 0 10px 0 #111;
+    margin-top: 7px;
+    background-size: cover !important;
+    border: 3px solid #e7e7e7;
+    background-position: center center !important;
+}
+.profilUzytkownika .profilDane {
+	gap: 5px;
+    flex-direction: column;
+    display: flex;
+}
+.profilUzytkownika .profilDane h1 {
+	color: orange;
+    text-shadow: 1px 1px 3px #000;
+    letter-spacing: 3px;
+}
+.profilUzytkownika .profilDane h5 {
+	color: #c5c5c5;
+	font-style: italic;
+    text-shadow: 1px 1px 3px #000;
+    letter-spacing: 2px;
+	font-size: 1rem;
+}
+.profilUzytkownika .profilDane h3 {
+	font-style: italic;
+    font-size: 1.1rem;
+    letter-spacing: 1px;
+    color: goldenrod;
+}
+.profilUzytkownika .profilDane .przerywnik {
+	width: 55%;
+    height: 3px;
+    margin: 2px 0 2px;
+    border-radius: 2px;
+}
+.profilUzytkownika textarea {
+	font-size: 1.1rem;
+    background: #222;
+    resize: none;
+    border: none;
+    padding: 10px 15px;
+    overflow: hidden;
+}
+.profilUzytkownika .otworzEdytor {
+	position: absolute;
+    top: 0;
+    right: 0;
+    border: none;
+    padding: 10px;
+    background: #455A64;
+    font-weight: bold;
+    border-left: 2px solid #888888;
+    border-bottom: 2px solid #888888;
+    border-radius: 0 0 0 8px;
+    cursor: pointer;
+    transition: all .4s ease;
+    z-index: 6;
+    font-size: 1rem;
+}
+.profilUzytkownika .otworzEdytor:hover {
+	background: #444;
+	color: #ddd;
+	letter-spacing: 1px;
+}
+.edytorProfilu {
+	position: absolute;
+	z-index: 5;
+	top: 0;
+	left: 0;
+	right: 0;
+	min-height: 690px;
+	padding: 0px;
+	display: flex;
+	flex-direction: column;
+	background: #141414;
+}
+.edytorProfilu input, .edytorProfilu select {
+	outline: none;
+    border: none;
+    padding: 10px;
+    margin-top: -20px;
+    font-weight: 500;
+    font-size: 1rem;
+    box-shadow: 0 0 10px 0 #333;
+    background: #dcdcdc;
+	color: #222;
+}
+.edytorProfilu option { color: #222; }
+.edytorProfilu .edycjaAwatar, .edytorProfilu .edycjaInne {
+	display: flex;
+	gap: 20px;
+	padding: 20px;
+}
+.edytorProfilu .edycjaInne { flex-grow: 1; justify-content: space-between;}
+.edytorProfilu .opcjeEdycjiAwatara, .edytorProfilu .edycjaBio, .edytorProfilu .edycjaHaslo, .edytorProfilu .usunKonto {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	padding: 10px 20px;
+}
+.edytorProfilu textarea { width: 100%; font-size: 1rem; }
+.edytorProfilu .edycjaHaslo { padding: 0; }
+.edytorProfilu .edycjaHaslo input { margin-top: -15px; }
+.edytorProfilu .opcjeEdycjiAwatara {
+	align-items: flex-start;
+}
+.edytorProfilu label, .edytorProfilu button {
+	padding: 10px;
+	font-size: 0.9rem;
+	font-weight: 500;
+	border: none;
+	background: #ccc;
+	color: #222;
+	letter-spacing: 1px;
+	cursor: pointer;
+	transition: all .4s ease;
+}
+.edytorProfilu label:hover, .edytorProfilu button:hover {
+	letter-spacing: 2px;
+	background: #333;
+	color: #d4d4d4;
+}
+.edytorProfilu .edycjaBio {
+	position: relative;
+}
+.edytorProfilu .edycjaBio button {
+	position: absolute;
+	top: 0;
+	right: 20px;
+}
+.edytorProfilu .btnBad {
+	background: crimson;
+}
+.edytorProfilu .btnGood {
+	background:rgb(1, 158, 1);
+}
+.edytorProfilu span {
+	text-align: center;
+    margin-bottom: 15px;
+    letter-spacing: 2px;
+    font-weight: bold;
+    color: crimson;
+    text-shadow: 1px 1px 3px #000;
+	animation: blinkTekst 1s linear;
+}
+.wykresyProfilu {
+	display: flex;
+    justify-content: space-around;
+}
+.wykresyProfilu img { height: 100%; max-height: 270px; width: fit-content; }
+
+
+
+
+
+.lapTelemetry h3 {
+	width: 100%;
+    text-align: center;
+    background: #040404;
+	padding: 5px;
+}
+.lapTelemetry tr td, .lapTelemetry tr th {
+	padding: 10px;
+	font-size: 1rem;
+	border: none;
+}
+.lapTelemetry tr:nth-child(even) th {
+	background: #2d2d2d;
+}
+.lapTelemetry { margin: 0 10px; }

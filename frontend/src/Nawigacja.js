@@ -22,6 +22,7 @@ export default function Nawigacja() {
 			).then((res) => {
 				if(!res.data['blad']){
 					localStorage.setItem('login', res.data['login']);
+					localStorage.setItem('avatar', res.data['avatar']);
 					setSprawdzona(true);
 				} else {
 					localStorage.removeItem("token");

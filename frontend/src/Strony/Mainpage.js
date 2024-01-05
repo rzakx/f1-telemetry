@@ -41,8 +41,8 @@ export default function Mainpage(props){
                             <div className="mainPageAvatar" style={{backgroundImage: `url('${localStorage.getItem('avatar')}')`}}/>
                             <div className="mainPageProfileData">
                                 <div><span>Greetings,<br/><b>{localStorage.getItem("login")}</b></span></div>
-                                <div><span>Favourite car:<br/>{stats.favCar ? stats.favCar : stats.checked ? "Unknown" : "???"}</span></div>
-                                <div><span>Favourite track:<br/>{stats.favTrack ? stats.favTrack : stats.checked ? "Unknown" : "???"}</span></div>
+                                <div><span>Favourite car:<br/>{stats.favCar ? gb.teamIds[stats.favCar] : stats.checked ? "Unknown" : "???"}</span></div>
+                                <div><span>Favourite track:<br/>{stats.favTrack ? gb.trackIds[stats.favTrack] : stats.checked ? "Unknown" : "???"}</span></div>
                             </div>
                         </div>
                         <div className="mainPageSession">

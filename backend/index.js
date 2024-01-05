@@ -45,6 +45,26 @@ const smtp = nodemailer.createTransport({
 		privateKey: process.env.DKIM
 	}
 });
+const path = require("path");
+const multer = require("multer");
+const storage = multer.diskStorage({
+	destination: (req, file, cb) => {
+		if(file.fieldname === 'awatarImg'){
+			cb(null, 'awatary/');
+		} else {
+			cb(null, '/');
+		}
+	},
+	filename: (req, file, cb) => {
+		if(file.fieldname === 'awatarImg'){
+			cb(null, req.params.login + '-' + Date.now() + path.extname(file.originalname));
+		} else {
+			cb(null, 'inne-' + Date.now() + path.extname(file.originalname));
+		}
+	}
+});
+
+const upload = multer({storage: storage});
 const register_available = true;
 
 appHTTP.use(express.json());
@@ -98,14 +118,14 @@ appHTTP.get("/typkonta/:token", (req, res) => {
 	const token = req.params.token;
 	const userIP = req.headers['x-forwarded-for'];
 	if(token.length == 40){
-		db.query("SELECT `login`, `ip` FROM `konta` WHERE `token` = ?", [token],
+		db.query("SELECT `login`, `ip`, `avatar` FROM `konta` WHERE `token` = ?", [token],
 		(err, result) => {
 			if(result.length > 0){
 				if(result[0]['ip'] != userIP){
 					db.query("UPDATE `konta` SET `ip` = ? WHERE `token` = ?", [userIP, token]);
 					powiazaniaIP[userIP] = result[0]['login'];
 				}
-				res.send({login: result[0]['login']});
+				res.send({login: result[0]['login'], avatar: result[0]['avatar']});
 			} else {
 				res.send({blad: "Nie ma takiego tokenu"});
 			}
@@ -288,20 +308,32 @@ appHTTP.post("/mainStats/:token", (req, res) => {
 		res.send({error: "Invalid token"});
 		return;
 	}
-	let tmp = {sessionsO: 0, sessionsA: 0, setupsO: 0, setupsA: 0, queue: bufforData.getStats().keys, lastsession: null};
+	let tmp = {sessionsO: 0, sessionsA: 0, setupsO: 0, setupsA: 0, queue: bufforData.getStats().keys, lastsession: null, favCar: null, favTrack: null};
 	db.query("SELECT COUNT(*) as 'i' FROM `sesje`", (er, r) => {
 		if(!er)	tmp.sessionsA = r[0].i;
-		db.query("SELECT COUNT(*) as 'i' FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.params.token], (er2, r2) => {
-			if(!er2) tmp.sessionsO = r2[0].i;
-			if(tmp.sessionsO){
-				db.query("SELECT * FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?) ORDER BY `lastUpdate` DESC LIMIT 1", [req.params.token], (er3, r3) => {
-					console.log(r3[0]);
-					tmp.lastsession = r3[0];
-					res.send(tmp);
+		db.query("SELECT COUNT(*) as 'i' FROM `setups`", (ers, rs) => {
+			tmp.setupsA = rs[0].i;
+			db.query("SELECT COUNT(*) as 'i' FROM `setups` WHERE `author` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.params.token], (ers2, rs2) => {
+				tmp.setupsO = rs2[0].i;
+				db.query("SELECT `favCar`, `favTrack` FROM `konta` WHERE `token` = ?", [req.params.token], (erf, rf) => {
+					if(!erf){
+						tmp.favCar = rf[0].favCar;
+						tmp.favTrack = rf[0].favTrack;
+					}
+					db.query("SELECT COUNT(*) as 'i' FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?)", [req.params.token], (er2, r2) => {
+						if(!er2) tmp.sessionsO = r2[0].i;
+						if(tmp.sessionsO){
+							db.query("SELECT * FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?) ORDER BY `lastUpdate` DESC LIMIT 1", [req.params.token], (er3, r3) => {
+								console.log(r3[0]);
+								tmp.lastsession = r3[0];
+								res.send(tmp);
+							});
+						} else {
+							res.send(tmp);
+						}
+					});
 				});
-			} else {
-				res.send(tmp);
-			}
+			});
 		});
 	});
 });
@@ -428,6 +460,186 @@ appHTTP.post("/createSetup/:token", (req, res) => {
 		}
 	})
 });
+
+
+/* PROFILE */
+appHTTP.post("/profilLookup", (req, res) => {
+	if(!req.body.kogo){
+		res.send({blad: "Username not given."});
+		return;
+	}
+	//podstawowe informacje
+	db.query("SELECT `avatar`, `registered`, `description`, `favCar`, `favTrack` FROM `konta` WHERE `login` = ?", [req.body.kogo], (er, r) => {
+		if(r.length > 0){
+			let tmp = {avatar: r[0]['avatar'], registered: r[0]['registered'], description: r[0]['description'], favCar: r[0]['favCar'], favTrack: r[0]['favTrack'], sessionsO: 0};
+			//liczba sesji
+			db.query("SELECT COUNT(*) as 'i' FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `login` = ?)", [req.body.kogo], (er2, r2) => {
+				if(er2){
+					res.send(tmp);
+					return;
+				}
+				tmp['sessionsO'] = r2[0].i;
+				//ostatnia sesja
+				if(r2[0].i > 0){
+					db.query("SELECT * FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `login` = ?) ORDER BY `lastUpdate` DESC LIMIT 1", [req.body.kogo], (er3, r3) => {
+						if(!er3){
+							tmp['lastSession'] = r3[0];
+							res.send(tmp);
+							return;
+						} else {
+							tmp['lastSession'] = null;
+							res.send(tmp);
+							return;
+						}
+					});
+				} else {
+					tmp['lastSession'] = null;
+					res.send(tmp);
+					return;
+				}
+			})
+		} else {
+			res.send({blad: "There's no profile with such username."});
+		}
+	});
+});
+
+appHTTP.post("/changePassword/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({blad: "Invalid token."});
+		return;
+	}
+	const szyfrHasloStare = CryptoJS.HmacSHA1(req.body.aktHaslo, KLUCZ_H).toString();
+	const szyfrHasloNowe = CryptoJS.HmacSHA1(req.body.noweHaslo, KLUCZ_H).toString();
+	db.query('UPDATE `konta` SET `haslo` = ? WHERE `token` = ? AND `haslo` = ?', [szyfrHasloNowe, req.params.token, szyfrHasloStare], (er, r) => {
+		if(er){
+			res.send({blad: "Database error "+er.errno});
+			return;
+		}
+		if(r.affectedRows > 0){
+			res.send({odp: "Password changed!"});
+			return;
+		} else {
+			res.send({blad: "Invalid current password."});
+			return;
+		}
+	});
+});
+
+appHTTP.post("/changeDescription/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({blad: "Invalid token."});
+		return;
+	}
+	if(req.body.description && req.body.description.length > 400){
+		res.send({blad: "Description is too long. Stay in 400 chars maximum!"});
+		return;
+	}
+	db.query('UPDATE `konta` SET `description` = ? WHERE `token` = ?', [req.body.description, req.params.token], (er, r) => {
+		if(er){
+			res.send({blad: "Błąd sql"});
+			return;
+		}
+		if(r.affectedRows > 0){
+			res.send({odp: "Description changed."});
+			return;
+		} else {
+			res.send({blad: "Invalid token."});
+			return;
+		}
+	});
+});
+
+appHTTP.post("/changeAvatar/:token", upload.single('awatarImg'), (req, res) => {
+	if(!req.params.token) {
+		res.send({blad: "Invalid token."});
+		return;
+	}
+	db.query("SELECT `avatar` FROM `konta` WHERE `token` = ?", [req.params.token], (er, r) => {
+		if(er){
+			res.send({blad: "Invalid token."});
+			return;
+		}
+		if(r.length > 0){
+			if(req.file){
+				const nowaNazwa = "/images/" + req.file.destination + req.file.filename;
+				db.query("UPDATE `konta` SET `avatar` = ? WHERE `token` = ?" , [nowaNazwa, req.params.token], (er2, r2) => {
+					if(r2.affectedRows > 0){
+						res.send({odp: nowaNazwa});
+					}
+				});
+			}
+		}
+	});
+});
+
+appHTTP.post("/deleteAvatar/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({blad: "Invalid token"});
+		return;
+	}
+	db.query("SELECT `avatar` FROM `konta` WHERE `token` = ?", [req.params.token], (er, r) => {
+		if(er){
+			res.send({blad: "Invalid token"});
+			return;
+		}
+		if(r.length > 0){
+			if(r[0]['avatar'] != '/images/awatary/defaultAvatar.png'){
+				db.query("UPDATE `konta` SET `avatar` = '/images/awatary/defaultAvatar.png' WHERE `token` = ?", [req.params.token]);
+				// fs.unlink(r[0]['awatar'], (err) => {
+				// 	if(err) {
+				// 		res.send({blad: "Błąd dostępu do pliku"});
+				// 	} else {
+				// 		res.send({odp: "Pomyślnie usunięto awatar!"});
+				// 	}
+				// });
+				res.send({odp: "Avatar deleted succesfully!"});
+			} else {
+				res.send({blad: "You can't delete default avatar..."});
+			}
+		}
+	});
+});
+
+appHTTP.post("/changeFavourites/:token", (req, res) => {
+	if(!req.params.token){
+		res.send({blad: "Invalid token."});
+		return;
+	}
+	db.query("UPDATE `konta` SET `favCar` = ?, `favTrack` = ? WHERE `token` = ?", [req.body.favCar, req.body.favTrack, req.params.token], (er, r) => {
+		if(er){
+			console.log(er);
+			res.send({blad: "Database error "+er.errno});
+			return;
+		}
+		if(r.affectedRows > 0){
+			res.send({odp: "Favourites updated"});
+			return;
+		} else {
+			res.send({odp: "Invalid token"});
+			return;
+		}
+	});
+});
+
+appHTTP.post("/usunKontoSmutek/:token", (req, res) => {
+	if(!req.params.token || !req.body.login){
+		res.send({blad: "Wystąpił błąd. Odśwież stronę."});
+		return;
+	}
+	db.query("DELETE FROM `konta` WHERE `login` = ? AND `token` = ?", [req.body.login, req.params.token], (er, r) => {
+		if(er){
+			res.send({blad: "Błąd sql."});
+			return;
+		}
+		if(r.affectedRows > 0){
+			res.send({odp: "OK"});
+		} else {
+			res.send({blad: "Nieprawidłowa sesja."});
+		}
+	})
+});
+/* END OF PROFILE */
 
 /* Parsery */
 const headerParser = new Parser().endianness("little").uint16le("m_packetFormat").uint8("m_gameMajorVersion").uint8("m_gameMinorVersion").uint8("m_packetVersion").uint8("m_packetId").uint64le("m_sessionUID").floatle("m_sessionTime").uint32le("m_frameIdentifier").uint8("m_playerCarIndex").uint8("m_secondaryPlayerCarIndex");

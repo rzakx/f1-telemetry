@@ -18,6 +18,7 @@ export default function Logowanie(props){
 					if(!res.data['blad']){
 						localStorage.setItem('login', res.data['login']);
 						localStorage.setItem('token', res.data['token']);
+						localStorage.setItem('avatar', res.data['avatar']);
 						window.location.replace("./");
 					} else {
 						setBlad("Incorrect data!");

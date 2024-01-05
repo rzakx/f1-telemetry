@@ -586,13 +586,16 @@ export default function ShowSessions(props){
 					</div>
 					<div className="lapTelemetry">
 						<h3>Lap Telemetry</h3>
-						<span>Top speed {topSpeed} kmh</span>
-						<span>Average speed {(avgSpeed/x).toFixed(1)} kmh</span>
-						<span>Average gas throttle input {(avgThrottle/x).toFixed(1)}%</span>
-						<span>Average brake input {(avgBrake/x).toFixed(0)}%</span>
-						<span>Tire wear: {initTireDegradation.toFixed(2)}% <CgArrowRight style={{verticalAlign: 'middle'}}/> {lastTireDegradation.toFixed(2)}% ({(lastTireDegradation - initTireDegradation).toFixed(2)}%)</span>
-						<span>ERS burnt {session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS} Joules</span>
-						<span>Car damage: yes/no</span>
+						<table>
+							<tbody>
+								<tr><th>Top Speed</th><td>{topSpeed} kmh</td></tr>
+								<tr><th>Avg Speed</th><td>{(avgSpeed/x).toFixed(1)} kmh</td></tr>
+								<tr><th>Avg Throttle Input</th><td>{(avgThrottle/x).toFixed(1)}%</td></tr>
+								<tr><th>Avg Brake Input</th><td>{(avgBrake/x).toFixed(1)}%</td></tr>
+								<tr><th>Tire wear</th><td>{initTireDegradation.toFixed(2)}% <CgArrowRight style={{verticalAlign: 'middle'}}/> {lastTireDegradation.toFixed(2)}%</td></tr>
+								<tr><th>ERS Burnt</th><td>{session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS} Joules</td></tr>
+							</tbody>
+						</table>
 					</div>
 					<div className="lapMinimap">
 						<span>{gb.trackIds[session.track]} + flaga</span>

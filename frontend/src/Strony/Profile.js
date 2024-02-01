@@ -3,8 +3,6 @@ import { useParams } from "react-router-dom";
 import Nawigacja from "../Nawigacja";
 import Axios from "axios";
 import gb from "../GlobalVars";
-import { RiShoppingBasket2Fill } from "react-icons/ri";
-import { FaUserCheck, FaUserTimes,FaUserClock, FaRedoAlt, FaPencilAlt, FaArrowAltCircleDown, FaArrowAltCircleUp } from "react-icons/fa";
 
 export default function Profile(props){
     const obejscieTlo = (c) => { return {backgroundImage: `url('${c}')`} };
@@ -47,7 +45,7 @@ export default function Profile(props){
     const wczytajDane = () => {
         Axios.post(gb.backendIP+"profilLookup", {kogo: profileData.login})
         .then((r) => {
-            console.log(r.data);
+            //console.log(r.data);
             if(r.data['blad']){
                 setProfileData({...profileData, loaded: true, blad: "Error! Couldn't load profile data..."});
             } else {

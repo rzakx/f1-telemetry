@@ -6,7 +6,6 @@ import { useState, useRef } from "react";
 import LoadingIndicator from "../Components/LoadingIndicator.js";
 import { AreaChart, XAxis, YAxis, CartesianGrid, Area, Tooltip, ResponsiveContainer } from "recharts";
 import { CgArrowRight } from "react-icons/cg";
-import { IoClose } from "react-icons/io5";
 import { RiCheckboxMultipleBlankFill, RiCheckboxMultipleBlankLine, RiSwordLine, RiBarChart2Fill } from "react-icons/ri";
 import { WiDaySunny, WiDaySunnyOvercast, WiCloud, WiShowers, WiRain, WiThunderstorm, WiNa} from "react-icons/wi";
 
@@ -15,7 +14,6 @@ export default function ShowSessions(props){
 	const [chartsLap, setChartsLap ] = useState(null);
 	const [refLapId, setRefLapId] = useState(localStorage.getItem("referenceLap") ? JSON.parse(localStorage.getItem("referenceLap")).id : null);
 	const [session, setSession] = useState({data: null, checkOwn: false, isChecking: false});
-	const [refLapData, setRefLapData] = useState({data: null});
 	const [blad, setBlad] = useState(false);
 	const initFrameNumber = useRef(null);
 	const canvasRef = useRef(null);
@@ -340,6 +338,9 @@ export default function ShowSessions(props){
 		let pogodaId = 0;
 		let airTemp = 0;
 		let trackTemp = 0;
+		let ersC = 0;
+		let positionMaxFrameC = 0;
+		let positionMinFrameC = 0;
 
 		chartsLap.frames.map( frame => {
 			const frameData = session.data[frame];
@@ -377,15 +378,7 @@ export default function ShowSessions(props){
 
 		if(chartsLap.compare){
 			const comparedLapData = JSON.parse(localStorage.getItem("referenceLap")).data;
-			console.log(comparedLapData);
-			carRef = comparedLapData.car;
-			sessionidRef = comparedLapData.sessionid;
-			timeLapRef = comparedLapData.time;
-			s1ref = comparedLapData.s1;
-			s2ref = comparedLapData.s2;
-			tireRef = comparedLapData.tire;
-			tireCRef = comparedLapData.tireC;
-			lapNumberRef = comparedLapData.lapNumber;
+			//console.log(comparedLapData);
 			if(chartsLap.track != comparedLapData.track) {
 				console.log("You're trying to compare laps from different tracks!");
 				setBlad("You're trying to compare laps from different tracks! 🤨");
@@ -394,22 +387,21 @@ export default function ShowSessions(props){
 				if(sessionId == refLapId.split("-")[0]){
 					console.log("Ta sama sesja");
 					framesSource = session;
+					carRef = comparedLapData.car;
+					sessionidRef = comparedLapData.sessionid;
+					timeLapRef = comparedLapData.time;
+					s1ref = comparedLapData.s1;
+					s2ref = comparedLapData.s2;
+					tireRef = comparedLapData.tire;
+					tireCRef = comparedLapData.tireC;
+					lapNumberRef = comparedLapData.lapNumber;
+					ersC = session.data[comparedLapData.maxF].statusPojazdu.wykorzystanyERS;
+					positionMaxFrameC = session.data[comparedLapData.maxF].daneOkrazenia.aktualnaPozycja;
+					positionMinFrameC = session.data[comparedLapData.minF].daneOkrazenia.aktualnaPozycja;
 				} else {
 					console.log("Inna sesja");
 					setBlad("Comparing laps from different sessions not available yet! 😕");
 					return;
-					// Axios.post(gb.backendIP+"sessionDetails", {
-					// 	requestUserId: localStorage.getItem("token"),
-					// 	sessionId: JSON.parse(localStorage.getItem("referenceLap")).id.split("-")[0]
-					// }).then((res) => {
-					// 	if(!res.data['blad']) {
-					// 		framesSource = {...res.data};
-					// 	}
-					// }).catch((err) => {
-					// 	console.log("Session details: ERROR | ", err.message);
-					// 	setBlad("Oops... Reference lap not available! 😕");
-					// 	return;
-					// })
 				}
 				comparedLapData.frames.map(frame => {
 					if(framesSource.data[frame].daneOkrazenia.lapDistance < 0) return;
@@ -482,12 +474,6 @@ export default function ShowSessions(props){
 
 		//console.log(chartsData);
 
-		/*
-		todo:
-		- reszta wykresow
-		- poprawic CSS minimapy dla np. Miami, bo canva zle rysuje
-		*/
-
 		//jesli nie ma w tym okrazeniu ramki z pogodą to znaczy ze nie bylo zmian wzgledem poprzednich ramek np. z poprzedniego okrazenia
 		//wyciagnijmy ja z poprzednich okrazen
 		let tmpFrame = chartsLap.minF;
@@ -556,7 +542,7 @@ export default function ShowSessions(props){
 						<><div className="overallLapHeader" style={{background: '#000b0c', borderTop: '2px solid white'}}>
 							<div className="overallLapInfo">
 								<p>Session {sessionidRef}</p>
-								<span><b>Reference</b> Lap {lapNumberRef} Position ???</span>
+								<span><b>Reference</b> Lap {lapNumberRef} Position {(positionMaxFrameC !== positionMinFrameC) ? positionMinFrameC : positionMaxFrameC} {(positionMaxFrameC !== positionMinFrameC) && <><CgArrowRight /> {positionMaxFrameC}</>}</span>
 							</div>
 							<div className="overallLapSectors">
 								<span>LAP | {gb.lapTimeFormat(timeLapRef, true)}</span>
@@ -586,19 +572,56 @@ export default function ShowSessions(props){
 					</div>
 					<div className="lapTelemetry">
 						<h3>Lap Telemetry</h3>
+						{!chartsLap.compare ?
 						<table>
 							<tbody>
 								<tr><th>Top Speed</th><td>{topSpeed} kmh</td></tr>
 								<tr><th>Avg Speed</th><td>{(avgSpeed/x).toFixed(1)} kmh</td></tr>
-								<tr><th>Avg Throttle Input</th><td>{(avgThrottle/x).toFixed(1)}%</td></tr>
-								<tr><th>Avg Brake Input</th><td>{(avgBrake/x).toFixed(1)}%</td></tr>
+								<tr><th>Avg Throttle Input</th><td>{(avgThrottle/x).toFixed(2)}%</td></tr>
+								<tr><th>Avg Brake Input</th><td>{(avgBrake/x).toFixed(2)}%</td></tr>
 								<tr><th>Tire wear</th><td>{initTireDegradation.toFixed(2)}% <CgArrowRight style={{verticalAlign: 'middle'}}/> {lastTireDegradation.toFixed(2)}%</td></tr>
-								<tr><th>ERS Burnt</th><td>{session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS} Joules</td></tr>
+								<tr><th>ERS Burnt</th><td>{session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS ? (session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS/1000).toFixed(0) : "0"} kJ</td></tr>
 							</tbody>
 						</table>
+						:
+						<table className="diffTable">
+							<tbody>
+								<tr>
+									<th>Top Speed</th>
+									<td>{topSpeed} kmh</td>
+									<td>{topSpeedC} kmh</td>
+								</tr>
+								<tr>
+									<th>Avg Speed</th>
+									<td>{(avgSpeed/x).toFixed(1)} kmh</td>
+									<td>{(avgSpeedC/xC).toFixed(1)} kmh</td>
+								</tr>
+								<tr>
+									<th>Avg Throttle Input</th>
+									<td>{(avgThrottle/x).toFixed(2)}%</td>
+									<td>{(avgThrottleC/xC).toFixed(2)}%</td>
+								</tr>
+								<tr>
+									<th>Avg Brake Input</th>
+									<td>{(avgBrake/x).toFixed(2)}%</td>
+									<td>{(avgBrakeC/xC).toFixed(2)}%</td>
+								</tr>
+								<tr>
+									<th>Tire wear</th>
+									<td>{initTireDegradation.toFixed(2)}% <CgArrowRight style={{verticalAlign: 'middle'}}/> {lastTireDegradation.toFixed(2)}%</td>
+									<td>{initTireDegradationC.toFixed(2)}% <CgArrowRight style={{verticalAlign: 'middle'}}/> {lastTireDegradationC.toFixed(2)}%</td>
+								</tr>
+								<tr>
+									<th>ERS Burnt</th>
+									<td>{session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS ? (session.data[chartsLap.maxF].statusPojazdu.wykorzystanyERS/1000).toFixed(0) : "0"} kJ</td>
+									<td>{ersC ? (ersC/1000).toFixed(0) : "0"} kJ</td>
+								</tr>
+							</tbody>
+						</table>
+						}
 					</div>
 					<div className="lapMinimap">
-						<span>{gb.trackIds[session.track]} + flaga</span>
+						<span>{gb.trackIds[session.track]}</span>
 						<div className="lapMinimapImg">
 							<img src={"/images/"+gb.trackMaps[session.track]} ref={setImgRef} />
 							<canvas id="minimapCanvas" ref={setCanvasRef} className="lapMinimapCanvas"/>

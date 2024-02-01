@@ -324,7 +324,6 @@ appHTTP.post("/mainStats/:token", (req, res) => {
 						if(!er2) tmp.sessionsO = r2[0].i;
 						if(tmp.sessionsO){
 							db.query("SELECT * FROM `sesje` WHERE `user_id` = (SELECT `id` FROM `konta` WHERE `token` = ?) ORDER BY `lastUpdate` DESC LIMIT 1", [req.params.token], (er3, r3) => {
-								console.log(r3[0]);
 								tmp.lastsession = r3[0];
 								res.send(tmp);
 							});
@@ -670,7 +669,6 @@ const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 		if(temporarySessionIds[id] > 10){
 			return;
 		}
-		console.log(id, typdanych, daneIn);
 		db.query(`INSERT INTO sesje (session_id, ip, ${typdanych}, user_id) VALUES (?, ?, ?, (SELECT id FROM konta WHERE ip = ?)) ON DUPLICATE KEY UPDATE ${typdanych} = ?`, [id, adresIP, daneIn, adresIP, daneIn], (er2, r2) => {
 			if(!er2){
 				if(r2.affectedRows < 1){
@@ -681,7 +679,6 @@ const zapiszDaneSesji = async (id, ramka, typdanych, daneIn, adresIP) => {
 			}
 		});
 	} else {
-		/* TODO: DODAĆ TIMESTAMP DO RAMEK I POZNIEJ USUWAC DUPLIKATY O STARSZEJ DACIE */
 		db.query("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [id, ramka, typdanych, zlib.deflateRawSync(JSON.stringify(daneIn)).toString('base64')], (er2, r2) => {
 			if(!er2){
 				if(r2.affectedRows < 1){
@@ -1103,13 +1100,6 @@ serverUDP.on("message", (msg, info) => {
 				"sessionType",
 				sesjaParser.m_sessionType, info.address
 			);
-			/* TODO: DODAC POGODOWE RZECZY I SUGEROWANIE PITSTOPOW 
-			przechowujSesje(
-				sesjaParser.m_header.m_sessionUID,
-				sesjaParser.m_header.m_frameIdentifier,
-				"sessionPacket",
-				track, info.address
-			); */
 			break;
 		
 		default:

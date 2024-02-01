@@ -28,9 +28,6 @@ export default function Mainpage(props){
         });
     };
 
-    // TODO:
-    //  - FAVOURITE CAR & TRACK CHECK-UP
-
     return(
         <>
             <Nawigacja />

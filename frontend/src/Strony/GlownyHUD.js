@@ -111,7 +111,8 @@ export default function GlownyHUD() {
 		// socket.on("glowne", (v) => {
 		socket.on(localStorage.getItem("login"), (v) => {
 			if(v.daneMotion){
-				rysuj(v.daneMotion.pozycjaX, v.daneMotion.pozycjaZ);
+				// funkcjonalnosc rysowania gotowa, aczkolwiek minimapa sie nie miesci i trzeba byloby zrobic od nowa inny szablon graficzny, na co nie ma czasu
+				// rysuj(v.daneMotion.pozycjaX, v.daneMotion.pozycjaZ);
 				!sprData && setSprData(true);
 			}
 			if(v.daneOkrazenia){
@@ -164,7 +165,6 @@ export default function GlownyHUD() {
 		ctx.arc(tmpX, tmpZ, 2, 0, 2*Math.PI);
 		ctx.fill();
 		ctx.closePath();
-		//console.log("rysuje tu", tmpX, tmpZ);
 	};
 
 	const noweOkr = () => {
@@ -175,15 +175,7 @@ export default function GlownyHUD() {
 		ctx.rect(0,0,500,300);
 		ctx.fill();
 		ctx.closePath();
-		//console.log("NOWE OKR");
 	};
-
-	/* TODO:
-		- zrobic useParams dla loginu, zeby moc ogladac telemetrie kogos innego
-		- zrobic sprawdzenie czy uzytkownik ma dostep do czyjejs telemetrii
-			(raczej bedzie nowa tabela w bazie, np. ID, kto, komu) i tutaj zrobic liste np. ze zwrotem użytkowników "kto", gdzie "komu" jest naszym loginem
-			- jak zrobi sie podstrone dla Profilu użytkownika, to żeby tam użytkownik mógł nadawać i zabierać dostęp innym do Realtime hudu
-	*/
 
 	return (
 		<>
@@ -295,7 +287,7 @@ export default function GlownyHUD() {
 							Diffusor Damage: {daneUszkodzenia.dyfuzor}%<br />
 						</div>
 					</div>
-					<div className="glowne">
+					{/* <div className="glowne">
 						<div>
 							<h3>Minimap</h3>
 							<canvas className="minimapa" ref={ustawReferencje} />
@@ -304,7 +296,7 @@ export default function GlownyHUD() {
 							<h3>ENVIRONMENT INFORMATIONS</h3>
 							<h5>work in progress</h5>
 						</div>
-					</div>
+					</div> */}
 				</div>
 			</div>
 		</>

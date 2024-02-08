@@ -17,4 +17,4 @@ node_modules/
 .eslintcache
 .env.local
 .cache
-screenlog*
+screenlog.0*

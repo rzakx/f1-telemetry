@@ -349,7 +349,7 @@ export default function ShowSessions(props){
 			if(frameData.daneOkrazenia.lapDistance < 0) return;
 			x++;
 			if(frameData.telemetria){
-				console.log(frameData);
+				// console.log(frameData);
 				if(frameData.telemetria.predkosc > topSpeed) topSpeed = frameData.telemetria.predkosc;
 				avgSpeed = avgSpeed + frameData.telemetria.predkosc;
 				avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
@@ -446,10 +446,14 @@ export default function ShowSessions(props){
 			const estimUnknown = (iteration, key) => {
 				let seekMin = iteration;
 				let seekMax = iteration;
-				while(chartsData[seekMin][key] === undefined){
+				while(true){
+					if(chartsData[seekMin] === undefined) continue;
+					if(chartsData[seekMin][key] !== undefined || seekMin-1 < 0) break;
 					seekMin = seekMin - 1;
 				}
-				while(chartsData[seekMax][key] === undefined){
+				while(true){
+					if(chartsData[seekMax] === undefined) continue;
+					if(chartsData[seekMax][key] !== undefined || seekMax+1 > chartsData.length-1) break;
 					seekMax = seekMax + 1;
 				}
 				return (parseFloat(chartsData[seekMin][key])+parseFloat(chartsData[seekMax][key]))/2;

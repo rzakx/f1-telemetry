@@ -7,6 +7,16 @@ export default function Mainpage(props){
     document.title = "TrackVision - Mainpage"
     const [stats, setStats] = useState({checked: false, sessionsO: 0, sessionsA: 0, setupsO: 0, setupsA: 0, queue: 0, lastsession: null, favCar: undefined, favTrack: undefined});
     const [frames, setFrames] = useState({checked: false, own: 0, all: 0});
+    const [tele, setTele] = useState({checked: false, adres: null, port: null});
+
+    const checkTele = () => {
+        Axios.post(gb.backendIP).then((r) => {
+            setTele({...tele, ...r.data, checked: true});
+        }).catch((er) => {
+            console.log(er);
+            setTele({...tele, checked: true});
+        });
+    };
 
     const checkStats = () => {
         Axios.post(gb.backendIP+"mainStats/"+localStorage.getItem('token')).then((r) => {
@@ -62,6 +72,7 @@ export default function Mainpage(props){
                             <div><span>Your saved sessions</span><span>{stats.sessionsO ? stats.sessionsO : "None"}</span></div>
                             <div><span>Your session frames count</span><span>{frames.own ? frames.own.toLocaleString() : frames.checked ? "None" : "?"}</span></div>
                             <div><span>Your saved setups</span><span>{stats.setupsO ? stats.setupsO : "None"}</span></div>
+                            <div><span>Telemetry settings</span><span>{tele.adres ? `${tele.adres}:${tele.port}` : "Oops.. Error!"}</span></div>
                         </div>
                         <div className="mainBottomColumn">
                             <div><span>Total saved sessions</span><span>{stats.sessionsA ? stats.sessionsA : "None"}</span></div>
@@ -71,8 +82,9 @@ export default function Mainpage(props){
                         </div>
                     </div>
                 </div>
-                {!stats.checked && checkStats() }
-                {(!frames.checked && stats.checked) && checkFrames()}
+                { !stats.checked && checkStats() }
+                { (!frames.checked && stats.checked) && checkFrames() }
+                { !tele.checked && checkTele() }
             </div>
         </>
     );

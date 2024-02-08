@@ -1,6 +1,7 @@
 const udp = require("dgram");
 const mysql = require("mysql");
-const fs = require('fs');
+const os = require('os');
+const netIP = os.networkInterfaces()['eth0'] ? os.networkInterfaces()['eth0'][0].address : null;
 const compression = require('compression');
 const zlib = require("zlib");
 const cache = require('node-cache');
@@ -24,7 +25,7 @@ const CryptoJS = require("crypto-js");
 const { setInterval } = require("timers");
 const KLUCZ_H = process.env.KLUCZ_H;
 const db = mysql.createPool({
-	user: 'rafal',
+	user: process.env.DB_LOGIN,
 	host: "localhost",
 	password: process.env.DB_PASS,
 	database: "f1telemetry",
@@ -33,15 +34,15 @@ const db = mysql.createPool({
 	dateStrings: true
 });
 const smtp = nodemailer.createTransport({
-	host: 'rzak.pl',
+	host: process.env.EMAIL_DOMAIN,
 	port: 25,
 	auth: {
-		user: 'no-reply@rzak.pl',
+		user: process.env.EMAIL_ADDRESS,
 		pass: process.env.EMAIL_PASS
 	},
 	dkim:{
-		domainName: "rzak.pl",
-		keySelector: "6660249100.internal",
+		domainName: process.env.EMAIL_DOMAIN,
+		keySelector: process.env.EMAIL_SELECTOR,
 		privateKey: process.env.DKIM
 	}
 });
@@ -81,6 +82,10 @@ db.query("SELECT `login`, `ip` FROM `konta`", (er, r) => {
 	}
 });
 
+appHTTP.post("/", (req, res) => {
+	res.send({working: true, adres: netIP ? netIP : null, port: portUDP});
+	return;
+});
 appHTTP.post("/login", (req, res) => {
 	const userIP = req.headers['x-forwarded-for'];
 	const user = req.body.username;
@@ -159,7 +164,7 @@ appHTTP.post("/register", (req, res) => {
 									if(err){ res.send({blad: err})}
 									if(result.affectedRows > 0){
 										await smtp.sendMail({
-											from: 'no-reply@rzak.pl',
+											from: process.env.EMAIL_ADDRESS,
 											to: req.body.email,
 											subject: 'F1 Telemetry - Account was created',
 											html: "<h1>Your account was created!</h1><br>Username: <b>"+user+"</b>"
@@ -193,7 +198,7 @@ appHTTP.post("/reset", (req, res) => {
 				db.query("SELECT `email` FROM `konta` WHERE `login` = ?", [user], async (err2, r2) => {
 					if(r2.length > 0){
 						await smtp.sendMail({
-							from: 'no-reply@rzak.pl',
+							from: process.env.EMAIL_ADDRESS,
 							to: r2[0]['email'],
 							subject: 'F1 Telemetry - Password recovery',
 							html: "<h1>Requested password recovery!</h1><br>Your code: <b>"+kodzwrotny+"</b>"
@@ -214,9 +219,9 @@ appHTTP.post("/resetcheck", (req, res) => {
 	console.log("");
 	console.log(new Date().toISOString(), "Sprawdzanie czy kod zwrotny ", zwrotny, " jest git");
 	db.query(
-		"SELECT COUNT(*) FROM `konta` WHERE `reset` = ?",
+		"SELECT COUNT(*) as 'w' FROM `konta` WHERE `reset` = ?",
 		[zwrotny], (err, result) => {
-			if(result.length > 0){
+			if(result[0].w > 0){
 				res.send({odp: "GITES"});
 			} else {
 				res.send({blad: "Zly kod"});
@@ -1112,7 +1117,7 @@ serverUDP.on("listening", () => {
 	const port = adr.port;
 	const family = adr.family;
 	const ipadr = adr.address;
-	console.log("Serwer UDP: ", ipadr, ":", port, " Typ: ", family);
+	console.log("Serwer UDP: ", netIP ? netIP : ipadr, ":", port, " Typ: ", family);
 });
 serverUDP.on("close", () => {
 	console.log("Socket zamkniety!");

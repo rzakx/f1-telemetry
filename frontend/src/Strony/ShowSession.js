@@ -57,8 +57,9 @@ export default function ShowSessions(props){
 			const canvasY = imgRef.current.height;
 			const ctx = canvasRef.current.getContext('2d');
 			ctx.scale(dpr, dpr);
-			ctx.clearRect(0,0,canvasX, canvasY);
+			ctx.clearRect(0,0,canvasX*1.1, canvasY*1.1);
 			ctx.beginPath();
+
 			let [correctX, correctY, viewX, viewY] = gb.minimapMappings[session.track];
 			// (pozycja + poczatekTrack) / koniecTrack  = jakis %
 			// jakis % * rozdzielczosc canvy
@@ -348,6 +349,7 @@ export default function ShowSessions(props){
 			if(frameData.daneOkrazenia.lapDistance < 0) return;
 			x++;
 			if(frameData.telemetria){
+				console.log(frameData);
 				if(frameData.telemetria.predkosc > topSpeed) topSpeed = frameData.telemetria.predkosc;
 				avgSpeed = avgSpeed + frameData.telemetria.predkosc;
 				avgThrottle = avgThrottle + frameData.telemetria.gaz*100;
@@ -361,7 +363,7 @@ export default function ShowSessions(props){
 					throttle: (frameData.telemetria.gaz*100).toFixed(0),
 					brake: (frameData.telemetria.hamulec*100).toFixed(0),
 					time: frameData.daneOkrazenia.aktualneOkr,
-					lapDist: frameData.daneOkrazenia.lapDistance.toFixed(0)
+					lapDist: frameData.daneOkrazenia.lapDistance ? frameData.daneOkrazenia.lapDistance.toFixed(0) : 0
 				});
 			}
 			if(frameData.uszkodzenia){
@@ -622,8 +624,8 @@ export default function ShowSessions(props){
 					</div>
 					<div className="lapMinimap">
 						<span>{gb.trackIds[session.track]}</span>
-						<div className="lapMinimapImg">
-							<img src={"/images/"+gb.trackMaps[session.track]} ref={setImgRef} />
+						<div className="lapMinimapImg" style={{background: `url('/images/${gb.trackMaps[session.track]}')`, backgroundRepeat: "no-repeat", backgroundSize: 'contain'}}>
+							<img src={"/images/"+gb.trackMaps[session.track]} ref={setImgRef} style={{opacity: 0}} />
 							<canvas id="minimapCanvas" ref={setCanvasRef} className="lapMinimapCanvas"/>
 						</div>
 					</div>

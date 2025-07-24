@@ -1,26 +1,13 @@
 {
-  "name": "f1-telemetria",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "binary-parser": "^2.2.1",
-    "compression": "^1.7.4",
-    "cors": "^2.8.5",
-    "crypto-js": "^4.1.1",
-    "dgram": "^1.0.1",
-    "dotenv": "^16.0.3",
-    "express.js": "^1.0.0",
-    "multer": "^1.4.5-lts.1",
-    "mysql": "^2.18.1",
-    "node-cache": "^5.1.2",
-    "nodemailer": "^6.9.1",
-    "pako": "^2.1.0",
-    "socket.io": "^4.6.1"
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "mysql2": "^3.14.2",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "bun-types": "^1.2.19"
   }
 }

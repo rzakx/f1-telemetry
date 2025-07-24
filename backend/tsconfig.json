@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "types": ["bun-types"], // 👈 important
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+  }
+}

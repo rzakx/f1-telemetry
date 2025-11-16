@@ -1,13 +1,16 @@
-import { parseCarDamage, parseCarStatus, parseLap, parseMotion, parseParticipants, parseSession, parseTelemetry } from "./structure";
-import mysql, { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import { parsePacketCarDamageData, parsePacketCarMotionExtra, parsePacketCarSetupData, parsePacketCarStatusData, parsePacketCarTelemetryData, parsePacketClassificationData, parsePacketLapData, parsePacketLobbyInfoData, parsePacketMotionData, parsePacketParticipantsData, parsePacketSessionData, parsePacketSessionHistoryData, parsePacketTimeTrialData, parsePacketTyreSetsData } from "./structure25";
+import mysql, { QueryResult, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { deflateRawSync, inflateRawSync } from "zlib";
 import { Server } from "socket.io";
 import { createServer } from "http";
-import express from "express";
+import express, { RequestHandler } from "express";
 import os from "os";
 import { unlink } from "fs/promises";
 import multer from "multer";
 import path from "path";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import { randomBytes } from "crypto";
 const portHTTP = Number(process.env.PORT_HTTP) || 20778;
 const portUDP: number = Number(process.env.PORT_UDP) || 20777;
 const networkIP = os.networkInterfaces().eth0![0].address || null;
@@ -32,8 +35,9 @@ const expressApp = express();
 const serverHTTP = createServer(expressApp);
 const io = new Server(serverHTTP, {
 	cors: {
-		origin: "*",
-		methods: ["GET", "POST"]
+		origin: "https://formula.zakrzewski.dev",
+		credentials: true,
+		methods: ["GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"]
 	}
 });
 
@@ -68,13 +72,44 @@ try {
 		r.forEach((w) => {
 			boundIP[w.ip] = w.login;
 		});
+		console.log("boundIP: ", boundIP);
 	}
 } catch(boundIPerr) {
 	console.log("Couldn't load informatcion for boundIP from database accounts table.");
 	console.dir(boundIPerr, {depth: null, colors: true});
 }
 
+declare module "express-serve-static-core" {
+	interface Request {
+		auth_access_id?: number;
+		auth_user_id?: number;
+	}
+}
+
+const requireAuth: RequestHandler = async (req, res, next) => {
+	const accessToken = req.cookies.access_token || req.headers.authorization?.split(" ")[1];
+	if(!accessToken) {
+		res.status(401).json({error: "Missing access token."});
+		return;
+	}
+	const [r] = await db.execute<RowDataPacket[]>("SELECT id, user_id FROM access WHERE access_token = ? AND access_token_expiry > ?", [accessToken, new Date()]);
+	if(!r.length){
+		res.status(401).json({error: "Invalid or expired access token."});
+		return;
+	} else {
+		req.auth_user_id = r[0].user_id;
+		req.auth_access_id = r[0].id;
+		next();
+	}
+};
+
 // ExpressJS endopoints
+expressApp.use(cors({
+	origin: ["https://formula.zakrzewski.dev"],
+	credentials: true,
+	methods: ["GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"],
+}));
+expressApp.use(cookieParser());
 expressApp.use(express.json());
 
 expressApp.get("/", (req, res) => {
@@ -82,97 +117,181 @@ expressApp.get("/", (req, res) => {
 	return;
 });
 
+expressApp.post("/logout", requireAuth, async (req, res) => {
+	const [ deleteSession ] = await db.execute<ResultSetHeader>("DELETE FROM access WHERE id = ?", [req.auth_access_id]);
+	if(deleteSession.affectedRows){
+		res.status(200).json({message: "Succesfully logged out."});
+		return;
+	} else {
+		res.status(500).json({error: "Database error occured."});
+		return;
+	}
+});
+
+expressApp.post("/logoutAll", requireAuth, async (req, res) => {
+	const [ deleteAllSessions ] = await db.execute<ResultSetHeader>("DELETE FROM access WHERE user_id = ?", [req.auth_user_id]);
+	if(deleteAllSessions.affectedRows){
+		res.status(200).json({message: "Succesfully logged out from all devices."});
+		return;
+	} else {
+		res.status(500).json({error: "Database error occured."});
+		return;
+	}
+});
+
 expressApp.post("/login", async (req, res) => {
-	const userIP = req.headers['x-forwarded-for'];
-	const user = req.body.username;
-	const hasher = new Bun.CryptoHasher("sha1", process.env.KLUCZ_H);
-	hasher.update(req.body.password);
-	const tmpHaslo = hasher.digest("hex");
-	console.log(tmpHaslo);
+	if(!req.body.login || !req.body.password){
+		res.status(400).json({message: "Required credentials missing."});
+		return;
+	}
+	if(req.body.login.length < 3 || req.body.login.length > 30){
+		res.status(400).json({message: "Invalid length of credentials."});
+		return;
+	}
+	if(req.body.password.length < 6 || req.body.password.length > 100){
+		res.status(400).json({message: "Invalid length of credentials."});
+		return;
+	}
 	try {
-		const [r] = await db.execute<RowDataPacket[]>("SELECT login FROM accounts WHERE login = ? AND passwd = ?", [user, tmpHaslo]);
-		if(r.length){
-			console.log(`User ${user} succesfully logged in.`);
-			const saltToken = Date.now().toString() + user;
-			hasher.update(saltToken);
-			const token = hasher.digest("hex");
-			try {
-				await db.execute("UPDATE accounts SET token = ?, ip = ? WHERE login = ?", [token, userIP, user]);
-				res.send({
-					login: user,
-					token: token
-				});
-				if(typeof(userIP) === "string") boundIP[user] = userIP;
-				return;
-			} catch(er2) {
-				console.log("Couldn't update token for user:", user);
-				res.send({error: "Error occured while trying to generate your user session."})
-				console.dir(er2, {depth: null, colors: true});
+		const [user] = await db.execute<RowDataPacket[]>("SELECT id, passwd FROM accounts WHERE login = ?", [req.body.login]);
+		if(user.length){
+			const checkPassword = await Bun.password.verify(req.body.password, user[0].passwd);
+			if(checkPassword){
+				const access_token = randomBytes(64).toString("hex");
+				const access_token_expiry = new Date();
+				access_token_expiry.setHours(access_token_expiry.getHours() + 1);
+
+				const refresh_token = randomBytes(64).toString("hex");
+				const refresh_token_expiry = new Date();
+				refresh_token_expiry.setDate(refresh_token_expiry.getDate() + 7);
+
+				try {
+					const [ storeTokens ] = await db.execute<ResultSetHeader>("INSERT INTO access (user_id, access_token, access_token_expiry, refresh_token, refresh_token_expiry) VALUES (?, ?, ?, ?, ?)", [user[0].id, access_token, access_token_expiry, refresh_token, refresh_token_expiry]);
+					if(storeTokens.affectedRows){
+						console.log("Wyslano refresh token", refresh_token);
+						res.cookie("refresh_token", refresh_token, {
+							httpOnly: true,
+							secure: true,
+							sameSite: "none",
+							domain: ".zakrzewski.dev"
+						}).status(200).json({access_token: access_token});
+						return;
+					} else {
+						res.status(500).json({message: "There was an error while trying to generate your user session."});
+						return;
+					}
+				} catch(er2) {
+					res.status(500).json({message: "There was an error while trying to generate your user session."});
+					return;
+				}
+			} else {
+				res.status(401).json({message: "Invalid credentials."});
 				return;
 			}
 		} else {
-			res.send({error: "Invalid credentials"});
+			res.status(401).json({message: "Invalid credentials."});
 			return;
 		}
 	} catch(er) {
 		console.log("Error in ExpressJS on /login");
 		console.dir(er, {depth: null, colors: true});
-		res.send({error: "There was an error while processing your request."});
+		res.status(500).json({message: "There was an error while processing your request."});
 		return;
 	}
 });
 
-expressApp.post("/activeSession/:token", async (req, res) => {
-	const token = req.params.token;
-	const userIP = req.headers['x-forwarded-for'];
-	if(token.length === 40){
-		try {
-			const [r] = await db.execute<RowDataPacket[]>("SELECT login, ip, avatar FROM accounts WHERE token = ?", [token]);
-			if(r.length){
-				if(typeof(userIP) === "string" &&  r[0]['ip'] != userIP){
-					await db.execute("UPDATE accounts SET ip = ? WHERE token = ?", [userIP, token]);
-					boundIP[userIP] = r[0]['login'];
-				}
-				res.send({
-					login: r[0]['login'],
-					avatar: r[0]['avatar'],
-				})
-				return;
-			} else {
-				res.send({error: "Invalid or expired session. Log in again."});
-				return;
-			}
-		} catch(er){
-			console.log("Error occured while checking an active frontend session");
-			console.dir(er, {depth: null, colors: true});
-			res.send({error: "Request error"});
-		}
+expressApp.post("/refresh", async (req, res) => {
+	console.log("ck", req.cookies);
+	console.log("sck", req.signedCookies);
+	if(!req.cookies){
+		res.status(401).json({message: "Missing cookies."});
+		return;
+	}
+	if(!req.cookies.refresh_token){
+		res.status(401).json({message: "Missing refresh token."});
+		return;
+	}
+	const [ validateToken ] = await db.execute<RowDataPacket[]>("SELECT id, refresh_token_expiry FROM access WHERE refresh_token = ?", [req.cookies.refresh_token]);
+	if(!validateToken.length){
+		// no query results
+		console.log("Niepoprawny refresh: ", req.cookies.refresh_token);
+		res.status(401).json({message: "Invalid refresh token."});
+		return;
+	}
+	if(new Date(validateToken[0].refresh_token_expiry) < new Date()){
+		// expired
+		res.status(401).json({message: "Refresh token expired."});
+		await db.execute<ResultSetHeader>("DELETE FROM access WHERE id = ?", [validateToken[0].id]);
+		return;
+	}
+	const accessToken = randomBytes(64).toString("hex");
+	const accessExpiry = new Date();
+	accessExpiry.setHours(accessExpiry.getHours() + 1);
+	const [ updateAccess ] = await db.execute<ResultSetHeader>("UPDATE access SET access_token = ?, access_token_expiry = ? WHERE id = ?", [accessToken, accessExpiry, validateToken[0].id]);
+	if(updateAccess.affectedRows){
+		res.status(200).json({access_token: accessToken});
+		return;
 	} else {
-		res.send({error: "Invalid session"});
+		res.status(500).json({error: "Database error occured."});
+		return;
+	}
+});
+
+expressApp.get("/me", requireAuth, async (req, res) => {
+	const [ userInfo ] = await db.execute<RowDataPacket[]>("SELECT login, email, avatar, favCar, favTrack, ip FROM accounts WHERE id = ?", [ req.auth_user_id ]);
+	if(!userInfo.length){
+		res.status(403).json({error: "Your account has been removed."});
+		return;
+	} else {
+		// return response with everything except user previous IP
+		res.status(200).json({login: userInfo[0].login, email: userInfo[0].email, avatar: userInfo[0].avatar, favCar: userInfo[0].favCar, favTrack: userInfo[0].favTrack});
+
+		const userIP = req.headers['x-forwarded-for'];
+		if(typeof(userIP) === "string" &&  userInfo[0].ip != userIP){
+			//if current IP is different, lets update the value in db
+			await db.execute("UPDATE accounts SET ip = ? WHERE id = ?", [userIP, req.auth_user_id]);
+			boundIP[userIP] = userInfo[0].login;
+		}
 		return;
 	}
 });
 
 expressApp.post("/register", async (req, res) => {
 	if(!register_available){
-		res.send({error: "Registration is currently disabled."});
+		res.status(403).json({error: "Registration is currently disabled."});
 		return;
 	}
+	if(!req.body.username || !req.body.email || !req.body.passwd){
+		res.status(400).json({error: "Missing parameters."});
+		return;
+	}
+	if(req.body.username.length < 3 || req.body.username.length > 30){
+		res.status(400).json({error: "Invalid username length."});
+		return;
+	}
+	if(req.body.passwd.length < 6 || req.body.passwd.length > 100){
+		res.status(400).json({error: "Invalid password length."});
+		return;
+	}
+	if(req.body.email.length < 6 || req.body.email.length > 70){
+		res.status(400).json({error: "Invalid email length."});
+		return;
+	}
+
 	const [checkLogin] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM accounts WHERE login = ?", [req.body.username]);
 	if(checkLogin[0].i > 0){
-		res.send({error: "Username already taken!"});
+		res.status(409).json({error: "Username already taken!"});
 		return;
 	}
 	const [checkEmail] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM accounts WHERE email = ?", [req.body.email]);
 	if(checkEmail[0].i > 0){
-		res.send({error: "Email already in use!"});
+		res.status(409).json({error: "Email already in use!"});
 		return;
 	}
-	const hasher = new Bun.CryptoHasher("sha1", process.env.KLUCZ_H);
-	hasher.update(req.body.passwd);
-	const [r] = await db.execute<ResultSetHeader>("INSERT INTO accounts (login, passwd, email) VALUES (?, ?, ?)", [req.body.username, hasher.digest("hex"), req.body.email]);
+	const hasher = await Bun.password.hash(req.body.passwd);
+	const [r] = await db.execute<ResultSetHeader>("INSERT INTO accounts (login, passwd, email) VALUES (?, ?, ?)", [req.body.username, hasher, req.body.email]);
 	if(r.affectedRows){
-		res.send({response: "Account created."});
+		res.status(200).json({response: "Account created."});
 		// notify on email
 		// try {
 		// 	await smtp.sendMail({
@@ -187,7 +306,7 @@ expressApp.post("/register", async (req, res) => {
 		// }
 		return;
 	} else {
-		res.send({error: "Error. Try again."});
+		res.status(500).send({error: "Error. Try again."});
 		return;
 	}
 });
@@ -338,6 +457,17 @@ expressApp.post("/deleteSession/:token/:sessionId", async (req, res) => {
 		console.log("Error while deleting session:", req.params.sessionId);
 		console.dir(er, {depth: null, colors: true});
 		res.send({error: "Database error occured."});
+		return;
+	}
+});
+
+expressApp.get("/lastSession", requireAuth, async (req, res) => {
+	const [ lastSession ] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = ? ORDER BY lastUpdate DESC LIMIT 1", [req.auth_user_id]);
+	if(lastSession.length){
+		res.status(200).json({...lastSession[0]});
+		return;
+	} else {
+		res.status(200).send(undefined);
 		return;
 	}
 });
@@ -699,303 +829,219 @@ expressApp.post("/deleteAccount/:token", async (req, res) => {
 
 
 
-const storeSessionData = async (
-		sessionID: bigint,
-		frameID: number,
-		dataType: "motion" | "carDamage" | "carStatus" | "telemetry" | "carId" | "trackId" | "lapData" | "weather" | "sessionType",
-		data: any,
-		userIP: string
-	) => {
+// const storeSessionData = async (
+// 		sessionID: bigint,
+// 		frameID: number,
+// 		dataType: "motion" | "carDamage" | "carStatus" | "telemetry" | "carId" | "trackId" | "lapData" | "weather" | "sessionType",
+// 		data: any,
+// 		userIP: string
+// 	) => {
+// 		// single values to store like car, track or session id are being sent the whole time session is in progress
+// 		// but first 10 values are completely enough to obtain all needed information
+// 		if(singleRecord.includes(dataType)){
+// 			console.log("storeSessionData singleRecord");
+// 			if(temporarySessionIds[sessionID.toString()]) temporarySessionIds[sessionID.toString()] += 1;
+// 			else temporarySessionIds[sessionID.toString()] = 1;
 
-		// single values to store like car, track or session id are being sent the whole time session is in progress
-		// but first 10 values are completely enough to obtain all needed information
-		if(singleRecord.includes(dataType)){
-			if(temporarySessionIds[sessionID.toString()]) temporarySessionIds[sessionID.toString()] += 1;
-			else temporarySessionIds[sessionID.toString()] = 1;
+// 			if(temporarySessionIds[sessionID.toString()] > 10) return;
+// 			try {
+// 				await db.execute(`INSERT INTO sessions (session_id, ip, ${dataType}, user_id) VALUES (?, ?, ?, (SELECT id FROM accounts WHERE ip = ?)) ON DUPLICATE KEY UPDATE ${dataType} = ?`, [sessionID, userIP, data, userIP, data]);
+// 			} catch(er){
+// 				console.log("Couldn't save single record value to database...");
+// 				console.dir(er, { depth: null, colors: true });
+// 			}
+// 		} else {
+// 			console.log("storeSessionData frame");
+// 			try {
+// 				await db.execute("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [sessionID, frameID, dataType, deflateRawSync(JSON.stringify(data)).toString('base64')]);
+// 			} catch(er2){
+// 				console.log("Couldn't save frame packet to database...");
+// 				console.dir(er2, { depth: null, colors: true });
+// 			}
+// 		}
+// }
 
-			if(temporarySessionIds[sessionID.toString()] > 10) return;
-
-			try {
-				await db.execute(`INSERT INTO sessions (session_id, ip, ${dataType}, user_id) VALUES (?, ?, ?, (SELECT id FROM accounts WHERE ip = ?)) ON DUPLICATE KEY UPDATE ${dataType} = ?`, [sessionID, userIP, data, userIP, data]);
-			} catch(er){
-				console.log("Couldn't save single record value to database...");
-				console.dir(er, { depth: null, colors: true });
-			}
-		} else {
-			try {
-				await db.execute("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [sessionID, frameID, dataType, deflateRawSync(JSON.stringify(data)).toString('base64')]);
-			} catch(er2){
-				console.log("Couldn't save frame packet to database...");
-				console.dir(er2, { depth: null, colors: true });
-			}
-		}
-
-
-}
+io.on("connection", (socket) => {
+	socket.on("joinRoom", (msg) => {
+		socket.join(msg);
+	});
+});
 
 const socketUDP = await Bun.udpSocket({
     port: portUDP,
     socket: {
         data(socket, msg, port, addr) {
+			if(!boundIP[addr]) return;
+			let driverName = boundIP[addr];
             switch(msg.length) {
-
-                // motion packet
-                case 1464:
-                    let recvMotion = parseMotion(msg);
-                    let motionData = {
-                        positionX:	recvMotion.carMotionData[recvMotion.header.m_playerCarIndex].m_worldPositionX,
-                        positionY:	recvMotion.carMotionData[recvMotion.header.m_playerCarIndex].m_worldPositionY,
-                        positionZ:	recvMotion.carMotionData[recvMotion.header.m_playerCarIndex].m_worldPositionZ,
-                        gLateral:	recvMotion.carMotionData[recvMotion.header.m_playerCarIndex].m_gForceLateral,
-                        gLong:		recvMotion.carMotionData[recvMotion.header.m_playerCarIndex].m_gForceLongitudinal,
-                        gVert:		recvMotion.carMotionData[recvMotion.header.m_playerCarIndex].m_gForceVertical
-                    }
-                    boundIP[addr] && io.emit(boundIP[addr], {motionData: motionData})
-                    storeSessionData(
-                        recvMotion.header.m_sessionUID,
-                        recvMotion.header.m_frameIdentifier,
-                        "motion",
-                        motionData,
-                        addr
-                    );
+                case 1349:
+                    let recvMotion = parsePacketMotionData(msg);
+                    // console.log("packet motion ")
+                    /*
+                    USEFUL values:
+                    - worldPositionX, Y, Z - for each car
+                    - gForceLateral, gForceLongitudinal, gForceVertical
+                    */
+                    let userCarMotion = recvMotion.carMotionData[recvMotion.header.playerCarIndex];
+                    // console.dir(recMotion, { depth: null });
+					io.to(driverName).emit("carMotion", recvMotion.carMotionData);
+					io.to(driverName).emit("carMotion2", userCarMotion);
                     break;
-                
-                // car damage
-                case 948:
-                    let recvCarDmg = parseCarDamage(msg);
-                    let carDmgData = {
-                        tireWearRL:		recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresWear[0],
-						tireWearRR:		recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresWear[1],
-						tireWearFL:		recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresWear[2],
-						tireWearFR:		recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresWear[3],
-						tireDamageRL:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresDamage[0],
-						tireDamageRR:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresDamage[1],
-						tireDamageFL:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresDamage[2],
-						tireDamageFR:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_tyresDamage[3],
-						wingDamageFL:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_frontLeftWingDamage,
-						wingDamageFR:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_frontRightWingDamage,
-						wingDamageRear:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_rearWingDamage,
-						floorDamage:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_floorDamage,
-						diffuserDamage:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_diffuserDamage,
-						sidepodDamage:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_sidepodDamage,
-						drsFault:		recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_drsFault,
-						ersFault:		recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_ersFault,
-						gearboxDamage:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_gearBoxDamage,
-						engineDamage:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineDamage,
-						engineWearMGUH:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineMGUHWear,
-						engineWearES:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineESWear,
-						engineWearCE:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineCEWear,
-						engineWearICE:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineICEWear,
-						engineWearMGUK:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineMGUKWear,
-						engineWearTC:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineTCWear,
-						engineBlown:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineBlown,
-						engineSeized:	recvCarDmg.carDamageData[recvCarDmg.header.m_playerCarIndex].m_engineSeized
-                    };
-					boundIP[addr] && io.emit(boundIP[addr], {carDamage: carDmgData})
-					storeSessionData(
-						recvCarDmg.header.m_sessionUID,
-						recvCarDmg.header.m_frameIdentifier,
-						"carDamage",
-						carDmgData,
-						addr
-					);
-					break;
+				case 273:
+                    // console.log("Motion Ex Data - no parser yet");
+					let recvMotionExtra = parsePacketCarMotionExtra(msg);
+					io.to(driverName).emit("myCarId", recvMotionExtra.header.playerCarIndex);
+					io.to(driverName).emit("motionExtra", {...recvMotionExtra, header: undefined});
+                    break;
+                case 753:
+                    // console.log("Packet Session Data");
+                    let recvSession = parsePacketSessionData(msg);
+                    // weather forecast samples are initially of 64 length, but the amount of actual values are represented by numWeatherForecastSamples, let's reduce the length of array...
+                    // also, it's good to point out that timeOffset in weatherForecastSample is in minutes - it would be cool to include that in some future page for race engineers
+                    // recvSession = {...recvSession, weatherForecastSamples: recvSession.weatherForecastSamples.slice(0, recvSession.numWeatherForecastSamples) }
+                    /*
+                    POTENTIAL GREAT VALUES TO SEND OVER WEBSOCKET TO REALTIME HUD:
+                        - pitStopWindowIdealLap, pitStopRejoinPosition
+                        - safety car status (0 - no safety car, 1 - full, 2 - virtual, 3 - formation lap only)
+                        - some values from weatherForecastSample structure are already in the parent, those are current values (weather, trackTemp, airTemp, forecastAccuracy)
+                        - sector2LapDistanceStart, sector3LapDistanceStart ( distance in m around track where sector starts )
+                    */
+                    // console.dir(recvSession, { depth: null });
+					io.to(driverName).emit("myCarId", recvSession.header.playerCarIndex);
+					// io.to(driverName).emit("sessionInfo", {...recvSession, header: undefined, weatherForecastSamples: recvSession.weatherForecastSamples.slice(0, recvSession.numWeatherForecastSamples) });
+					io.to(driverName).emit("sessionInfo", {
+						totalLaps: recvSession.totalLaps,
+						trackId: recvSession.trackId,
+						safetyCarStatus: recvSession.safetyCarStatus,
+						weather: recvSession.weather,
+						trackTemperature: recvSession.trackTemperature,
+						airTemperature: recvSession.airTemperature,
+						sessionType: recvSession.sessionType,
+						// sessionTimeLeft: recvSession.sessionTimeLeft,
+						sector2: recvSession.sector2LapDistanceStart,
+						sector3: recvSession.sector3LapDistanceStart,
+						trackLength: recvSession.trackLength
+					});
+                    break;
+                case 1285:
+                    // console.log("Packet Lap Data");
+                    //every car:  car position in race, last lap times, sector 1,2 times, delta to car in front, delta to leader, current lap number, is current lap invalid, resultStatus (DNF, DSQ, active)
+                    let recvLapData = parsePacketLapData(msg);
+					io.to(driverName).emit("myCarId", recvLapData.header.playerCarIndex);
+					io.to(driverName).emit("lapData", recvLapData.lapData);
+					io.to(driverName).emit("myLapData", recvLapData.lapData[recvLapData.header.playerCarIndex]);
+                    // console.dir(recvLapData, { depth: null });
+                    break;
+                case 1284:
+                    // console.log("Participants Data");
+                    let recvParticipants = parsePacketParticipantsData(msg);
+                    let usersList = recvParticipants.participants.map((part, index) => ({
+						carId: index, name: part.name, ai: part.aiControlled ? true : false,
+						teamId: part.teamId, networkId: part.networkId, platform: part.platform,
+						liveryColours: part.liveryColours, raceNumber: part.raceNumber, driverId: part.driverId
+					}));
+                    // console.dir(usersList, { depth: null });
+					io.to(driverName).emit("myCarId", recvParticipants.header.playerCarIndex);
+					io.to(driverName).emit("participants", usersList);
+                    break;
+                case 1133:
+                    // console.log("Car Setups Data");
+                    // only user car data is available, rest appears to be blank
+                    let recvSetup = parsePacketCarSetupData(msg);
+					// io.to(driverName).emit("myCarId", recvSetup.header.playerCarIndex);
+                    // console.dir(recvSetup.carSetupData[recvSetup.header.playerCarIndex], { depth: null });
+                    break;
+                case 1352:
+                    // console.log("Car Telemetry Data");
+                    // current speed and gear value, applied gas/brake/clutch/steer/drs, tire/brake/engine temps   aaand surfaceType ids for each wheel <== available for ALL cars
+                    let recvTelemetry = parsePacketCarTelemetryData(msg);
+                    // console.log(recvTelemetry, { depth: null });
+					io.to(driverName).emit("myCarId", recvTelemetry.header.playerCarIndex);
+					io.to(driverName).emit("carTelemetry", recvTelemetry.carTelemetryData);
+                    break;
+                case 1239:
+                    // console.log("Car Status Data");
+                    // fuel, brake bias, ers, rpm values, visualTyreCompound, tyresAgeLaps, drsAllowed
+                    let recvCarStatus = parsePacketCarStatusData(msg);
+                    // console.dir(recvCarStatus, { depth: null });
+					io.to(driverName).emit("myCarId", recvCarStatus.header.playerCarIndex);
+					io.to(driverName).emit("carStatus", recvCarStatus.carStatusData);
+                    break;
+                case 1042:
+                    // console.log("Final Classification");
+                    // once at the end of the race, could be useful to tag session as completed,
+                    // that tag would indicate that session is ready for all session frames combining and applying compression to reduce transfer to frontend
+                    let recvFinal = parsePacketClassificationData(msg);
 
-				// car status
-				case 1058:
-					let recvCarStatus = parseCarStatus(msg);
-					let carStatusData = {
-						tractionControl:	recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_tractionControl,
-						abs:				recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_antiLockBrakes,
-						brakeBias:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_frontBrakeBias,
-						pitLimiter:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_pitLimiterStatus,
-						fuelMode:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_fuelMix,
-						fuelLoaded:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_fuelInTank,
-						fuelMax:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_fuelCapacity,
-						fuelLapsLeft:		recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_fuelRemainingLaps,
-						maxRPM:				recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_maxRPM,
-						idleRPM:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_idleRPM,
-						drsAvailable:		recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_drsAllowed,
-						drsDistance:		recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_drsActivationDistance,
-						tiresType:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_actualTyreCompound,
-						tiresVisualType:	recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_visualTyreCompound,
-						tiresAges:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_tyresAgeLaps,
-						flag:				recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_vehicleFiaFlags,
-						ersStorage:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_ersStoreEnergy,
-						ersMode:			recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_ersDeployMode,
-						ersHarvestedMGUK:	recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_ersHarvestedThisLapMGUK,
-						ersHarvestedMGUH:	recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_ersHarvestedThisLapMGUH,
-						ersDeployed:		recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_ersDeployedThisLap,
-						networkPause:		recvCarStatus.carStatusData[recvCarStatus.header.m_playerCarIndex].m_networkPaused
-					};
-					boundIP[addr] && io.emit(boundIP[addr], {carStatus: carStatusData})
-					storeSessionData(
-						recvCarStatus.header.m_sessionUID,
-						recvCarStatus.header.m_frameIdentifier,
-						"carStatus",
-						carStatusData,
-						addr
-					);
-					break;
+                    let finalClassification = recvFinal.classificationData.slice(0, recvFinal.numCars).map(car => ({
+                        position: car.position,
+                        pitStops: car.numPitStops,
+                        penaltiesCount: car.numPenalties,
+                        penaltiesTime: car.penaltiesTime,
+                        raceTime: Math.round(car.totalRaceTime*1000), // original value (sec) -> (ms)
+                        bestLap: car.bestLapTimeInMS,
+                        status: car.resultStatus, // 0 = invalid, 1 = inactive, 2 = active, 3 = finished, 4 = didnotfinish, 5 = disqualified, 6 = not classified, 7 = retired
+                        tyreStints: {
+                            actualTyre: car.tyreStintsActual.slice(0, car.numTyreStints),
+                            visualTyre: car.tyreStintsVisual.slice(0, car.numTyreStints),
+                            endLap: car.tyreStintsEndLaps.slice(0, car.numTyreStints)
+                        }
+                    }));
+                    // console.dir(finalClassification, {depth: null});
+                    break;
+                case 954:
+                    console.log("Lobby Info");
+                    let recvLobby = parsePacketLobbyInfoData(msg);
+                    console.dir(recvLobby, { depth: null });
+                    break;
+                case 1041:
+                    // console.log("Car Damage Data");
+                    let recvDamage = parsePacketCarDamageData(msg);
+                    // console.dir(recvDamage, { depth: null });
+					io.to(driverName).emit("myCarId", recvDamage.header.playerCarIndex);
+					io.to(driverName).emit("carDamage", recvDamage.carDamageData);
+                    break;
+                case 1460:
+                    // user lap times in session (array of 100 laps, initially every lap with lapTimeInMS = 0), summary of best sectors and lap (gives lap number)
+                    // cycled through each car during 1 sec interval, need to use carIdx value to check if it matches with header playerCarIndex to get the user data, not other drivers...
+                    // array of 100 laps can be reduced to first X values, which should be equal to numLaps value
+                    let recvHistory = parsePacketSessionHistoryData(msg);
+                    // if(recvHistory.carIdx != recvHistory.header.playerCarIndex) return;
+					if(recvHistory.numLaps <= 1) return;
+					if(!recvHistory.bestLapTimeLapNum) return;
+					io.to(driverName).emit("bestLap", {carId: recvHistory.carIdx, bestLap: recvHistory.lapHistoryData.slice(0, recvHistory.numLaps - 1).sort((a, b) => a.lapTimeInMS - b.lapTimeInMS)[0] });
+                    // console.log("Session History");
 
-				// car telemetry
-				case 1347:
-					let recvTelemetry = parseTelemetry(msg);
-					let telemetryData = {
-						drsActive:			recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_drs,
-						speed:				recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_speed,
-						throttle:			recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_throttle,
-						steer:				recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_steer,
-						brake:				recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_brake,
-						clutch:				recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_clutch,
-						gear:				recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_gear,
-						engienRPM:			recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_engineRPM,
-						brakeTempRL:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_brakesTemperature[0],
-						brakeTempRR:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_brakesTemperature[1],
-						brakeTempFL:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_brakesTemperature[2],
-						brakeTempFR:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_brakesTemperature[3],
-						tireTempOuterRL:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresSurfaceTemperature[0],
-						tireTempOuterRR:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresSurfaceTemperature[1],
-						tireTempOuterFL:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresSurfaceTemperature[2],
-						tireTempOuterFR:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresSurfaceTemperature[3],
-						tireTempInnerRL:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresInnerTemperature[0],
-						tireTempInnerRR:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresInnerTemperature[1],
-						tireTempInnerFL:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresInnerTemperature[2],
-						tireTempInnerFR:	recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresInnerTemperature[3],
-						engineTemp:			recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_engineTemperature,
-						tirePressureRL:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresPressure[0],
-						tirePressureRR:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresPressure[1],
-						tirePressureFL:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresPressure[2],
-						tirePressureFR:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_tyresPressure[3],
-						tireSurfaceRL:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_surfaceType[0],
-						tireSurfaceRR:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_surfaceType[1],
-						tireSurfaceFL:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_surfaceType[2],
-						tireSurfaceFR:		recvTelemetry.carTelemetryData[recvTelemetry.header.m_playerCarIndex].m_surfaceType[3],
-						gearSuggested:		recvTelemetry.m_suggestedGear
-					};
-					boundIP[addr] && io.emit(boundIP[addr], {telemetry: telemetryData})
-					storeSessionData(
-						recvTelemetry.header.m_sessionUID,
-						recvTelemetry.header.m_frameIdentifier,
-						"telemetry",
-						telemetryData,
-						addr
-					);
-					break;
+                    let lapTimesHistory = recvHistory.lapHistoryData.slice(0, recvHistory.numLaps);
+                    // console.dir({ lapTimesHistory, tyreStints: recvHistory.tyreStintsHistoryData.filter(stint => stint.endLap ) }, { depth: null });
+                    break;
+                case 231:
+                    // same as in Session History Data, have to use carIdx to obtain correct user values,
+                    // but when it comes to tyre sets and their wear/usage, it could be cool to track how other drivers handle their tyres... potential indication of struggles and remaining possibilities
+                    let recvTyreSet = parsePacketTyreSetsData(msg);
+                    if(recvTyreSet.carIdx != recvTyreSet.header.playerCarIndex) return;
+                    // console.log("Weekend Tyre Set Data");
 
-				// participants
-				case 1257:
-					let recvParticipants = parseParticipants(msg);
-					// only used to obtain id of user's team / car
-					storeSessionData(
-						recvParticipants.header.m_sessionUID,
-						recvParticipants.header.m_frameIdentifier,
-						"carId",
-						recvParticipants.participants[recvParticipants.header.m_playerCarIndex].m_teamId,
-						addr
-					);
-					// boundIP & socket.io emit - maybe in the future, when it would be needed
-					break;
+                    // lets apply filter to list out only available sets...
+                    // ONLY FOR CONSOLE.DIR PURPOSES - fittedIdx wont work on changed array of tyreSets!!!
+                    // on the second thought - there's a fitted boolean value... so maybe its better to filter list even for further packet processing?
 
-				// lap data
-				case 972:
-					let recvLap = parseLap(msg);
-					let lapData = {
-						lastLapTime:		recvLap.lapData[recvLap.header.m_playerCarIndex].m_lastLapTimeInMS,
-						currentLapTime:		recvLap.lapData[recvLap.header.m_playerCarIndex].m_currentLapTimeInMS,
-						currentLapS1:		recvLap.lapData[recvLap.header.m_playerCarIndex].m_sector1TimeInMS,
-						currentLapS2:		recvLap.lapData[recvLap.header.m_playerCarIndex].m_sector2TimeInMS,
-						currentPosition:	recvLap.lapData[recvLap.header.m_playerCarIndex].m_carPosition,
-						lastLapNumber:		usersLastLapNumbers[recvLap.header.m_sessionUID.toString()] ? usersLastLapNumbers[recvLap.header.m_sessionUID.toString()] : 0,
-						currentLapNumber:	recvLap.lapData[recvLap.header.m_playerCarIndex].m_currentLapNum,
-						currentLapInvalid:	recvLap.lapData[recvLap.header.m_playerCarIndex].m_currentLapInvalid,
-						lapDistance:		recvLap.lapData[recvLap.header.m_playerCarIndex].m_lapDistance
-					};
-					usersLastLapNumbers[recvLap.header.m_sessionUID.toString()] = lapData.currentLapNumber;
-					boundIP[addr] && io.emit(boundIP[addr], {lapData: lapData})
-					storeSessionData(
-						recvLap.header.m_sessionUID,
-						recvLap.header.m_frameIdentifier,
-						"lapData",
-						lapData,
-						addr
-					);
-					break;
-				
-				// session data - info about weather and track
-				case 632:
-					let recvSession = parseSession(msg);
-					let shouldSaveWeather = false;
-					
-					if(!usersWeatherInfo[recvSession.header.m_sessionUID.toString()]){
-						usersWeatherInfo[recvSession.header.m_sessionUID.toString()] = {
-							'id': recvSession.m_weather,
-							'trackTemp': recvSession.m_trackTemperature,
-							'airTemp': recvSession.m_airTemperature
-						};
-						shouldSaveWeather = true;
-					} else {
-						if(usersWeatherInfo[recvSession.header.m_sessionUID.toString()].id != recvSession.m_weather){
-							usersWeatherInfo[recvSession.header.m_sessionUID.toString()].id = recvSession.m_weather;
-							shouldSaveWeather = true;
-						}
-						if(usersWeatherInfo[recvSession.header.m_sessionUID.toString()].trackTemp != recvSession.m_trackTemperature){
-							usersWeatherInfo[recvSession.header.m_sessionUID.toString()].trackTemp = recvSession.m_trackTemperature;
-							shouldSaveWeather = true;
-						}
-						if(usersWeatherInfo[recvSession.header.m_sessionUID.toString()].airTemp != recvSession.m_airTemperature){
-							usersWeatherInfo[recvSession.header.m_sessionUID.toString()].airTemp = recvSession.m_airTemperature;
-							shouldSaveWeather = true;
-						}
-					}
-
-					if(shouldSaveWeather){
-						storeSessionData(
-							recvSession.header.m_sessionUID,
-							recvSession.header.m_frameIdentifier,
-							"weather",
-							usersWeatherInfo[recvSession.header.m_sessionUID.toString()],
-							addr
-						);
-					}
-					storeSessionData(
-						recvSession.header.m_sessionUID,
-						recvSession.header.m_frameIdentifier,
-						"trackId",
-						recvSession.m_trackId,
-						addr
-					);
-					storeSessionData(
-						recvSession.header.m_sessionUID,
-						recvSession.header.m_frameIdentifier,
-						"sessionType",
-						recvSession.m_sessionType,
-						addr
-					);
-					break;
-				
-				// Car configuration setup - not needed yet
-				case 1102:
-					break;
-
-				// Lobby info - not needed yet
-				case 1191:
-					break;
-				
-				// Classification / When session ends - not needed yet
-				// could be useful to know which sessions wont change - could be optimized in database
-				case 1015:
-					break;
-				
-				// Miscelanious events: Fastest Lap, Invalidaded Lap, Teammate in Pitstop and other popups
-				case 40:
-					break;
-
-				// Session history - not needed
-				case 1155:
-					break;
-						
+                    // console.dir({tyreSet: recvTyreSet.tyreSetData.filter(tyre => tyre.available), fittedIdx: recvTyreSet.fittedIdx}, { depth: null });
+                    break;
+                case 101:
+                    // console.log("Time Trial Packet");
+                    let recvTimeTrial = parsePacketTimeTrialData(msg);
+                    // console.dir(recvTimeTrial, { depth: null });
+                    break;
+                case 1131:
+                    // Packet Lap Data seems to already include useful Lap Positions Packet values and even more...
+                    // console.log("Lap Positions Packet - no parser yet");
+                    break;
+                case 45:
+                    // console.log("Event packet");
+                    break;
 				default:
+					// console.log("Nieznany pakiet");
 					break;
             }
         }

@@ -18,7 +18,7 @@ const Login = () => {
 
     const handleRequest = async (e: FormEvent) => {
         e.preventDefault();
-        if(!!response) return;
+        if(response) return;
         startProcessing(async () => {
             if(!loginRef.current) return;
             if(!passwordRef.current) return;
@@ -47,7 +47,7 @@ const Login = () => {
             navigate("/");
             return;
         }
-    }, [isAuth]);
+    }, [isAuth, navigate]);
 
     return(
         <div className="w-dvw h-dvh flex justify-center items-center">

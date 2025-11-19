@@ -7,21 +7,20 @@ const Mainpage = () => {
     const [ lastSession, setLastSession ] = useState<{data: sessionData | undefined, checked: boolean}>({data: undefined, checked: false});
     const { user, api } = useAuth();
 
-    const checkLastSession = async () => {
-        await api.get("/lastSession")
-        .then((r) => {
-            console.log(r.data);
-            setLastSession({data: r.data, checked: true});
-        }).catch((er) => {
-            console.log(er);
-            setLastSession({data: undefined, checked: true});
-        });
-    };
-
+    
     useEffect(() => {
-        if(!user) return;
+        const checkLastSession = async () => {
+            await api.get("/lastSession")
+            .then((r) => {
+                console.log(r.data);
+                setLastSession({data: r.data, checked: true});
+            }).catch((er) => {
+                console.log(er);
+                setLastSession({data: undefined, checked: true});
+            });
+        };
         if(!lastSession.checked) checkLastSession();
-    }, [lastSession.checked, user]);
+    }, [api, lastSession.checked]);
 
     return(
         <div className="w-dvw h-dvh flex p-10 pl-26 items-center justify-center">
@@ -34,6 +33,8 @@ const Mainpage = () => {
                             <p>Fav Track: { user?.favTrack ? trackNameById[user?.favTrack] : "Unknown"}</p>
                             <p>Fav Team: { user?.favCar ? getTeamById[user?.favCar].name : "Unknown" }</p>
                             <p>Last session: { lastSession.data ? new Date(lastSession.data.lastUpdate).toLocaleString("pl-PL") : "No sessions available."}</p>
+                            <button onClick={() => api.post("logoutAll")}>Logout All</button>
+                            <button onClick={() => api.get("me")}>Get ME</button>
                         </div>
                     </div>
                     {/* <div>B</div> */}

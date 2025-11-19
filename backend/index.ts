@@ -1,5 +1,6 @@
 import { parsePacketCarDamageData, parsePacketCarMotionExtra, parsePacketCarSetupData, parsePacketCarStatusData, parsePacketCarTelemetryData, parsePacketClassificationData, parsePacketLapData, parsePacketLobbyInfoData, parsePacketMotionData, parsePacketParticipantsData, parsePacketSessionData, parsePacketSessionHistoryData, parsePacketTimeTrialData, parsePacketTyreSetsData } from "./structure25";
-import mysql, { QueryResult, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+// import mysql, { QueryResult, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import cassandra from "cassandra-driver";
 import { deflateRawSync, inflateRawSync } from "zlib";
 import { Server } from "socket.io";
 import { createServer } from "http";
@@ -17,19 +18,36 @@ const networkIP = os.networkInterfaces().eth0![0].address || null;
 // compression ?
 
 const register_available = true;
-const db: mysql.Pool = mysql.createPool({
-	host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 20,
-    queueLimit: 0,
-    multipleStatements: true,
-    dateStrings: true,
-    decimalNumbers: true,
-    // charset: 'utf8mb4_general_ci'
+// const db: mysql.Pool = mysql.createPool({
+// 	host: process.env.DB_HOST,
+//     user: process.env.DB_USER,
+//     password: process.env.DB_PASS,
+//     database: process.env.DB_NAME,
+//     waitForConnections: true,
+//     connectionLimit: 20,
+//     queueLimit: 0,
+//     multipleStatements: true,
+//     dateStrings: true,
+//     decimalNumbers: true,
+//     // charset: 'utf8mb4_general_ci'
+// });
+const db = new cassandra.Client({
+	contactPoints: ['127.0.0.1'],
+	localDataCenter: 'datacenter1',
+	keyspace: 'f1telemetry',
+	credentials: {
+		username: process.env.DB_USER!,
+		password: process.env.DB_PASS!
+	},
+	pooling: {
+		warmup: true,
+		maxRequestsPerConnection: 3072,
+		coreConnectionsPerHost: {
+			[cassandra.types.distance.local]: 10,
+		}
+	}
 });
+await db.connect();
 
 const expressApp = express();
 const serverHTTP = createServer(expressApp);
@@ -67,9 +85,9 @@ const boundIP: Record<string, string> = {}; // <userIP, userLogin>
 
 // load saved boundIP
 try {
-	const [r] = await db.query<RowDataPacket[]>("SELECT `login`, `ip` FROM `accounts`");
-	if(r.length){
-		r.forEach((w) => {
+	const r = await db.execute("SELECT login, ip FROM accounts");
+	if(r.rowLength){
+		r.rows.forEach((w) => {
 			boundIP[w.ip] = w.login;
 		});
 		console.log("boundIP: ", boundIP);
@@ -81,8 +99,8 @@ try {
 
 declare module "express-serve-static-core" {
 	interface Request {
-		auth_access_id?: number;
-		auth_user_id?: number;
+		auth_access_token?: string;
+		auth_user_id?: cassandra.types.Uuid;
 	}
 }
 
@@ -92,13 +110,17 @@ const requireAuth: RequestHandler = async (req, res, next) => {
 		res.status(401).json({error: "Missing access token."});
 		return;
 	}
-	const [r] = await db.execute<RowDataPacket[]>("SELECT id, user_id FROM access WHERE access_token = ? AND access_token_expiry > ?", [accessToken, new Date()]);
-	if(!r.length){
-		res.status(401).json({error: "Invalid or expired access token."});
+	const r = await db.execute("SELECT * FROM access_by_at WHERE access_token = ?", [accessToken], { prepare: true });
+	if(!r.rowLength){
+		res.status(401).json({error: "Invalid access token."});
+		return;
+	}
+	if(new Date(r.first().access_token_expiry) < new Date()){
+		res.status(401).json({error: "Access token expired."});
 		return;
 	} else {
-		req.auth_user_id = r[0].user_id;
-		req.auth_access_id = r[0].id;
+		req.auth_user_id = r.first().user_id;
+		req.auth_access_token = r.first().access_token;
 		next();
 	}
 };
@@ -118,8 +140,25 @@ expressApp.get("/", (req, res) => {
 });
 
 expressApp.post("/logout", requireAuth, async (req, res) => {
-	const [ deleteSession ] = await db.execute<ResultSetHeader>("DELETE FROM access WHERE id = ?", [req.auth_access_id]);
-	if(deleteSession.affectedRows){
+	let obtainRT;
+	if(req.cookies.refresh_token){
+		// use RT
+		obtainRT = req.cookies.refresh_token;
+	} else {
+		// find RT
+		const findrt = await db.execute("SELECT refresh_token FROM access_by_at WHERE user_id = ? AND access_token = ?", [req.auth_user_id, req.auth_access_token], { prepare: true });
+		if(findrt.rowLength){
+			obtainRT = findrt.first().refresh_token;
+		}
+	}
+	if(!obtainRT) {
+		// session was invalid anyways
+		console.log("Couldnt obtain refresh token to log out user... possible tombestone in database (???)");
+		res.status(200).json({message: "Succesfully logged out."});
+		return;
+	}
+	const result = await db.execute("DELETE FROM access WHERE refresh_token = ? AND user_id = ?", [obtainRT, req.auth_user_id], { prepare: true });
+	if(result.wasApplied()){
 		res.status(200).json({message: "Succesfully logged out."});
 		return;
 	} else {
@@ -129,8 +168,8 @@ expressApp.post("/logout", requireAuth, async (req, res) => {
 });
 
 expressApp.post("/logoutAll", requireAuth, async (req, res) => {
-	const [ deleteAllSessions ] = await db.execute<ResultSetHeader>("DELETE FROM access WHERE user_id = ?", [req.auth_user_id]);
-	if(deleteAllSessions.affectedRows){
+	const result = await db.execute("DELETE FROM access WHERE user_id = ?", [req.auth_user_id], { prepare: true });
+	if(result.wasApplied()){
 		res.status(200).json({message: "Succesfully logged out from all devices."});
 		return;
 	} else {
@@ -153,22 +192,21 @@ expressApp.post("/login", async (req, res) => {
 		return;
 	}
 	try {
-		const [user] = await db.execute<RowDataPacket[]>("SELECT id, passwd FROM accounts WHERE login = ?", [req.body.login]);
-		if(user.length){
-			const checkPassword = await Bun.password.verify(req.body.password, user[0].passwd);
+		const user = await db.execute("SELECT id, passwd FROM accounts WHERE login = ?", [req.body.login], { prepare: true });
+		if(user.rowLength){
+			const checkPassword = await Bun.password.verify(req.body.password, user.first().passwd);
 			if(checkPassword){
 				const access_token = randomBytes(64).toString("hex");
 				const access_token_expiry = new Date();
-				access_token_expiry.setHours(access_token_expiry.getHours() + 1);
+				access_token_expiry.setMinutes(access_token_expiry.getMinutes() + 15);
 
 				const refresh_token = randomBytes(64).toString("hex");
 				const refresh_token_expiry = new Date();
 				refresh_token_expiry.setDate(refresh_token_expiry.getDate() + 7);
 
 				try {
-					const [ storeTokens ] = await db.execute<ResultSetHeader>("INSERT INTO access (user_id, access_token, access_token_expiry, refresh_token, refresh_token_expiry) VALUES (?, ?, ?, ?, ?)", [user[0].id, access_token, access_token_expiry, refresh_token, refresh_token_expiry]);
-					if(storeTokens.affectedRows){
-						console.log("Wyslano refresh token", refresh_token);
+					const storeTokens = await db.execute("INSERT INTO access (user_id, access_token, access_token_expiry, refresh_token, refresh_token_expiry) VALUES (?, ?, ?, ?, ?)", [user.first().id, access_token, access_token_expiry, refresh_token, refresh_token_expiry], { prepare: true });
+					if(storeTokens.wasApplied()){
 						res.cookie("refresh_token", refresh_token, {
 							httpOnly: true,
 							secure: true,
@@ -181,6 +219,7 @@ expressApp.post("/login", async (req, res) => {
 						return;
 					}
 				} catch(er2) {
+					console.log(er2);
 					res.status(500).json({message: "There was an error while trying to generate your user session."});
 					return;
 				}
@@ -211,46 +250,52 @@ expressApp.post("/refresh", async (req, res) => {
 		res.status(401).json({message: "Missing refresh token."});
 		return;
 	}
-	const [ validateToken ] = await db.execute<RowDataPacket[]>("SELECT id, refresh_token_expiry FROM access WHERE refresh_token = ?", [req.cookies.refresh_token]);
-	if(!validateToken.length){
-		// no query results
-		console.log("Niepoprawny refresh: ", req.cookies.refresh_token);
-		res.status(401).json({message: "Invalid refresh token."});
-		return;
-	}
-	if(new Date(validateToken[0].refresh_token_expiry) < new Date()){
-		// expired
-		res.status(401).json({message: "Refresh token expired."});
-		await db.execute<ResultSetHeader>("DELETE FROM access WHERE id = ?", [validateToken[0].id]);
-		return;
-	}
-	const accessToken = randomBytes(64).toString("hex");
-	const accessExpiry = new Date();
-	accessExpiry.setHours(accessExpiry.getHours() + 1);
-	const [ updateAccess ] = await db.execute<ResultSetHeader>("UPDATE access SET access_token = ?, access_token_expiry = ? WHERE id = ?", [accessToken, accessExpiry, validateToken[0].id]);
-	if(updateAccess.affectedRows){
-		res.status(200).json({access_token: accessToken});
-		return;
-	} else {
-		res.status(500).json({error: "Database error occured."});
+	try {
+		const validateToken = await db.execute("SELECT * FROM access_by_rt WHERE refresh_token = ?", [req.cookies.refresh_token], { prepare: true });
+		if(!validateToken.rowLength){
+			// no query results
+			console.log("Niepoprawny refresh: ", req.cookies.refresh_token);
+			res.status(401).json({message: "Invalid refresh token."});
+			return;
+		}
+		if(new Date(validateToken.first().refresh_token_expiry) < new Date()){
+			// expired
+			res.status(401).json({message: "Refresh token expired."});
+			await db.execute("DELETE FROM access WHERE refresh_token = ? AND user_id = ?", [req.cookies.refresh_token, validateToken.first().user_id]);
+			return;
+		}
+		const accessToken = randomBytes(64).toString("hex");
+		const accessExpiry = new Date();
+		accessExpiry.setMinutes(accessExpiry.getMinutes() + 15);
+		const updateAccess = await db.execute("UPDATE access SET access_token = ?, access_token_expiry = ? WHERE refresh_token = ? AND user_id = ?", [accessToken, accessExpiry, req.cookies.refresh_token, validateToken.first().user_id], { prepare: true });
+		if(updateAccess.wasApplied()){
+			res.status(200).json({access_token: accessToken});
+			return;
+		} else {
+			res.status(500).json({error: "Database error occured."});
+			return;
+		}
+	} catch(er) {
+		console.log("refresh", er);
+		res.status(500).json({error: "There was an error while trying to refresh your user session."});
 		return;
 	}
 });
 
 expressApp.get("/me", requireAuth, async (req, res) => {
-	const [ userInfo ] = await db.execute<RowDataPacket[]>("SELECT login, email, avatar, favCar, favTrack, ip FROM accounts WHERE id = ?", [ req.auth_user_id ]);
-	if(!userInfo.length){
+	const userInfo = await db.execute("SELECT login, email, avatar, favcar, favtrack, ip FROM accounts WHERE id = ?", [ req.auth_user_id ], { prepare: true });
+	if(!userInfo.rowLength){
 		res.status(403).json({error: "Your account has been removed."});
 		return;
 	} else {
 		// return response with everything except user previous IP
-		res.status(200).json({login: userInfo[0].login, email: userInfo[0].email, avatar: userInfo[0].avatar, favCar: userInfo[0].favCar, favTrack: userInfo[0].favTrack});
+		res.status(200).json({login: userInfo.first().login, email: userInfo.first().email, avatar: userInfo.first().avatar, favCar: userInfo.first().favcar, favTrack: userInfo.first().favtrack});
 
 		const userIP = req.headers['x-forwarded-for'];
-		if(typeof(userIP) === "string" &&  userInfo[0].ip != userIP){
+		if(typeof(userIP) === "string" &&  userInfo.first().ip != userIP){
 			//if current IP is different, lets update the value in db
-			await db.execute("UPDATE accounts SET ip = ? WHERE id = ?", [userIP, req.auth_user_id]);
-			boundIP[userIP] = userInfo[0].login;
+			await db.execute("UPDATE accounts SET ip = ? WHERE id = ?", [userIP, req.auth_user_id], { prepare: true });
+			boundIP[userIP] = userInfo.first().login;
 		}
 		return;
 	}
@@ -278,19 +323,19 @@ expressApp.post("/register", async (req, res) => {
 		return;
 	}
 
-	const [checkLogin] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM accounts WHERE login = ?", [req.body.username]);
-	if(checkLogin[0].i > 0){
+	const checkLogin = await db.execute("SELECT id FROM accounts WHERE login = ?", [req.body.username], { prepare: true });
+	if(checkLogin.rowLength){
 		res.status(409).json({error: "Username already taken!"});
 		return;
 	}
-	const [checkEmail] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM accounts WHERE email = ?", [req.body.email]);
-	if(checkEmail[0].i > 0){
+	const checkEmail = await db.execute("SELECT id FROM accounts WHERE email = ?", [req.body.email], { prepare: true });
+	if(checkEmail.rowLength){
 		res.status(409).json({error: "Email already in use!"});
 		return;
 	}
 	const hasher = await Bun.password.hash(req.body.passwd);
-	const [r] = await db.execute<ResultSetHeader>("INSERT INTO accounts (login, passwd, email) VALUES (?, ?, ?)", [req.body.username, hasher, req.body.email]);
-	if(r.affectedRows){
+	const result = await db.execute("INSERT INTO accounts (id, login, passwd, email, avatar) VALUES (?, ?, ?, ?, ?)", [cassandra.types.Uuid.random(), req.body.username, hasher, req.body.email, '/avatars/defaultAvatar.png'], { prepare: true });
+	if(result.wasApplied()){
 		res.status(200).json({response: "Account created."});
 		// notify on email
 		// try {
@@ -306,7 +351,7 @@ expressApp.post("/register", async (req, res) => {
 		// }
 		return;
 	} else {
-		res.status(500).send({error: "Error. Try again."});
+		res.status(500).json({error: "Error. Try again."});
 		return;
 	}
 });
@@ -320,11 +365,11 @@ expressApp.post("/reset", async (req, res) => {
 	const hasher = new Bun.CryptoHasher("sha1", process.env.KLUCZ_H);
 	hasher.update(saltToken);
 	const resetCode = hasher.digest("hex");
-	const [r] = await db.execute<ResultSetHeader>("UPDATE accounts SET reset = ? WHERE login = ?", [resetCode, req.body.username]);
-	if(r.affectedRows){
+	const result = await db.execute("UPDATE accounts SET reset = ? WHERE login = ?", [resetCode, req.body.username], { prepare: true });
+	if(result.wasApplied()){
 		console.log(`User ${req.body.username} resets his password. Reset code: ${resetCode}`);
 		// send reset code on email address
-		const [email] = await db.execute<RowDataPacket[]>("SELECT email FROM accounts WHERE login = ?", [req.body.username]);
+		const email = await db.execute("SELECT email FROM accounts WHERE login = ?", [req.body.username], { prepare: true });
 		try {
 			// await smtp.sendMail({
 			// 	from: process.env.EMAIL_ADDRESS,
@@ -332,12 +377,13 @@ expressApp.post("/reset", async (req, res) => {
 			// 	subject: "F1 Telemetry - Password recovery",
 			// 	html: "<h1>Requested password recovery!</h1><br>Your reset code: <b>"+resetCode+"</b>"
 			// });
-			res.send({response: "Reset code has been sent."});
+			console.log(`SMTP Send not implemented. Code should, but wasnt delivered to ${email.first().email}`)
+			res.status(200).json({response: "Reset code has been sent."});
 		} catch(er) {
 			console.log("Error while trying to send reset code for password recovery for user: ", req.body.username);
 			console.log("Reset code is: "+resetCode);
 			console.dir(er, {depth: null, colors: true});
-			res.send({error: "There was an error while trying to send an email message with your reset code."});
+			res.status(500).json({error: "There was an error while trying to send an email message with your reset code."});
 			return;
 		}
 	} else {
@@ -347,485 +393,473 @@ expressApp.post("/reset", async (req, res) => {
 });
 
 expressApp.post("/resetcheck", async (req, res) => {
-	const [r] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM accounts WHERE reset = ?", [req.body.resetCode]);
-	if(r[0].i > 0){
-		res.send({response: "OK"});
+	const r = await db.execute("SELECT id FROM accounts WHERE reset = ?", [req.body.resetCode], { prepare: true });
+	if(r.rowLength){
+		res.status(200).json({response: "OK"});
 		return;
 	} else {
-		res.send({error: "Invalid reset code."});
+		res.status(400).json({error: "Invalid reset code."});
 		return;
 	}
 });
 
 expressApp.post("/resetfinal", async (req, res) => {
-	const hasher = new Bun.CryptoHasher("sha1", process.env.KLUCZ_H);
-	hasher.update(req.body.passwd);
-	const [r] = await db.execute<ResultSetHeader>("UPDATE accounts SET passwd = ?, reset = '' WHERE reset = ?", [hasher.digest("hex"), req.body.resetCode]);
-	if(r.affectedRows){
-		res.send({response: "Password succesfully changed."});
+	const hasher = await Bun.password.hash(req.body.passwd);
+	const r = await db.execute("UPDATE accounts SET passwd = ?, reset = '' WHERE reset = ?", [hasher, req.body.resetCode], { prepare: true });
+	if(r.wasApplied()){
+		res.status(200).json({response: "Password succesfully changed."});
 		return;
 	} else {
-		res.send({error: "Invalid reset code."});
+		res.status(400).json({error: "Invalid reset code."});
 		return;
 	}
 });
 
-expressApp.post("/sessions/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session"});
-		return;
-	}
-	const [userSessions] = await db.execute<RowDataPacket[]>("SELECT sessionType, trackId, session_id, lastUpdate, carId FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?) ORDER BY lastUpdate DESC", [req.params.token]);
-	if(userSessions.length){
-		res.send({data: userSessions});
-	} else {
-		res.send({data: null});
-	}
-});
+// expressApp.post("/sessions/:token", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session"});
+// 		return;
+// 	}
+// 	const userSessions = await db.execute("SELECT sessionType, trackId, session_id, lastUpdate, carId FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?) ORDER BY lastUpdate DESC", [req.params.token], { prepare: true });
+// 	if(userSessions.rowLength){
+// 		res.send({data: userSessions});
+// 	} else {
+// 		res.send({data: null});
+// 	}
+// });
 
-expressApp.post("/sessionDetails/:token", async (req, res) => {
-	if(!req.params.token || !req.body.sessionId){
-		res.send({error: "Not permitted."});
+// expressApp.post("/sessionDetails/:token", async (req, res) => {
+// 	if(!req.params.token || !req.body.sessionId){
+// 		res.send({error: "Not permitted."});
+// 		return;
+// 	}
+// 	try {
+// 		const [r] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE session_id = ? AND user_id = (SELECT id FROM accounts WHERE token = ?)", [req.body.sessionId, req.params.token]);
+// 		if(r.length){
+// 			try {
+// 				const [r2] = await db.execute<RowDataPacket[]>("SELECT * FROM frames WHERE session_id = ?", [req.body.sessionId]);
+// 				if(r2.length){
+// 					let tmpObj: Record<number, any> = {};
+// 					r2.forEach((singleFrame) => {
+// 						if(!tmpObj[singleFrame.frame]) tmpObj[singleFrame.frame] = {};
+// 						tmpObj[singleFrame.frame][singleFrame.data_type] = JSON.parse( inflateRawSync( Buffer.from(singleFrame.data, 'base64') ).toString() );
+// 					});
+// 					res.send({
+// 						data: tmpObj,
+// 						track: r[0].trackId,
+// 						type: r[0].sessionType,
+// 						lastUpdate: r[0].lastUpdate,
+// 						car: r[0].carId
+// 					});
+// 					return;
+// 				} else {
+// 					res.send({
+// 						data: null,
+// 						track: r[0].trackId,
+// 						type: r[0].sessionType,
+// 						lastUpdate: r[0].lastUpdate,
+// 						car: r[0].carId
+// 					});
+// 					return;
+// 				}
+// 			} catch(er2) {
+// 				console.log("Error on sessionDetails while trying to obtain frames for sessionID:", req.body.sessionId);
+// 				console.dir(er2, { depth: null, colors: true});
+// 			}
+// 		} else {
+// 			res.send({error: "Not permitted or session has been deleted."});
+// 		}
+// 	} catch(er){
+// 		console.log("sessionDetails sql error");
+// 		console.log(er);
+// 		res.send({error: "Database error occured."});
+// 		return;
+// 	}
+// });
+
+// expressApp.post("/deleteSession/:token/:sessionId", async (req, res) => {
+// 	if(!req.params.token || !req.params.sessionId){
+// 		res.send({error: "Invalid request."});
+// 		return;
+// 	}
+// 	try {
+// 		const [r] = await db.execute<ResultSetHeader>("DELETE FROM sessions WHERE session_id = ? AND user_id = (SELECT id FROM accounts WHERE token = ?)", [req.params.sessionId, req.params.token]);
+// 		if(r.affectedRows){
+// 			try {
+// 				const [r2] = await db.execute<ResultSetHeader>("DELETE FROM frames WHERE session_id = ?", [req.params.sessionId]);
+// 				res.send({response: "OK", recordsDeleted: r2.affectedRows});
+// 				return;
+// 			} catch(er2){
+// 				console.log("Error: Session was deleted from sessions table, but couldnt remove data from frames table.");
+// 				console.dir(er2, { depth: null, colors: true});
+// 				res.send({response: "OK"});
+// 			}
+// 		} else {
+// 			res.send({error: "Not permitted or session was already deleted."});
+// 			return;
+// 		}
+// 	} catch(er) {
+// 		console.log("Error while deleting session:", req.params.sessionId);
+// 		console.dir(er, {depth: null, colors: true});
+// 		res.send({error: "Database error occured."});
+// 		return;
+// 	}
+// });
+
+// expressApp.get("/lastSession", requireAuth, async (req, res) => {
+// 	const [ lastSession ] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = ? ORDER BY lastUpdate DESC LIMIT 1", [req.auth_user_id]);
+// 	if(lastSession.length){
+// 		res.status(200).json({...lastSession[0]});
+// 		return;
+// 	} else {
+// 		res.status(200).send(undefined);
+// 		return;
+// 	}
+// });
+
+// expressApp.post("/mainStats/:token", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session."});
+// 		return;
+// 	}
+// 	let tmp = {
+// 		userSessions: 0,
+// 		allSessions: 0,
+// 		userSetups: 0,
+// 		allSetups: 0,
+// 		lastSession: <RowDataPacket | null>null,
+// 		favCar: null,
+// 		favTrack: null
+// 	};
+// 	const [allSessions] = await db.query<RowDataPacket[]>("SELECT COUNT(*) as i FROM sessions");
+// 	tmp.allSessions = allSessions[0].i;
+// 	const [userSessions] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?)", [req.params.token]);
+// 	tmp.userSessions = userSessions[0].i;
+// 	const [allSetups] = await db.query<RowDataPacket[]>("SELECT COUNT(*) as i FROM setups");
+// 	tmp.allSetups = allSetups[0].i;
+// 	const [userSetups] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM setups WHERE author = (SELECT id FROM accounts WHERE token = ?)", [req.params.token]);
+// 	tmp.userSetups = userSetups[0].i;
+// 	const [fav] = await db.execute<RowDataPacket[]>("SELECT favCar, favTrack FROM accounts WHERE token = ?", [req.params.token]);
+// 	tmp.favCar = fav[0].favCar;
+// 	tmp.favTrack = fav[0].favTrack;
+// 	if(tmp.userSessions){
+// 		const [lastSession] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?) ORDER BY lastUpdate DESC LIMIT 1", [req.params.token]);
+// 		tmp.lastSession = lastSession[0];
+// 	}
+// 	res.send(tmp);
+// });
+
+// expressApp.post("/mainStatsFrames/:token", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session."});
+// 		return;
+// 	}
+// 	let tmp = { user: 0, all: 0 };
+// 	if(req.body.haveSessions){
+// 		const [userFrames] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM frames WHERE session_id IN (SELECT session_id FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?))", [req.params.token]);
+// 		tmp.user = userFrames[0].i;
+// 	}
+// 	const [allFrames] = await db.query<RowDataPacket[]>("SELECT COUNT(*) as i FROM frames");
+// 	tmp.all = allFrames[0].i;
+// 	res.send(tmp);
+// });
+
+// expressApp.post("/setups/:token", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session."});
+// 		return;
+// 	}
+// 	try {
+// 		const [r] = await db.execute<RowDataPacket[]>("SELECT setups.*, accounts.login, accounts.avatar FROM setups LEFT JOIN accounts ON setups.author = accounts.id WHERE author = (SELECT id FROM accounts WHERE token = ?) OR public = 1", [req.params.token]);
+// 		if(r.length){
+// 			res.send({data: r, error: null});
+// 		} else {
+// 			res.send({data: null, error: "No setups available to show."})
+// 		}
+// 	} catch(er) {
+// 		console.log("Error while trying to obtain list of available setups.");
+// 		console.dir(er, {depth: null, colors: true});
+// 		res.send({error: "Database error occured."});
+// 	}
+// });
+
+// expressApp.post("/setup/:token/:setupId", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session"});
+// 		return;
+// 	}
+// 	try {
+// 		const [r] = await db.execute<RowDataPacket[]>("SELECT * FROM setups WHERE id = ? AND (public = 1 OR author = (SELECT id FROM accounts WHERE token = ?))", [req.params.setupId, req.params.token]);
+// 		if(r.length){
+// 			res.send({data: r[0]});
+// 			return;
+// 		} else {
+// 			res.send({error: "You don't have access to that car setup."});
+// 			return;
+// 		}
+// 	} catch(er) {
+// 		console.log("Error while trying to obtain setup", req.params.setupId, "details.");
+// 		console.dir(er, {depth: null, colors: true});
+// 		res.send({error: "Database error occured."})
+// 		return;
+// 	}
+// });
+
+// expressApp.post("/deleteSetup/:token/:setupId", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session."});
+// 		return;
+// 	}
+// 	try {
+// 		const [r] = await db.execute<ResultSetHeader>("DELETE FROM setups WHERE id = ? AND author = (SELECT id FROM accounts WHERE token = ?)", [req.params.setupId, req.params.token]);
+// 		if(r.affectedRows){
+// 			res.send({response: "Deleted"});
+// 			return;
+// 		} else {
+// 			res.send({error: "You don't have permission to delete that setup."});
+// 			return;
+// 		}
+// 	} catch(er) {
+// 		console.log("Error while trying to delete setup id:", req.params.setupId);
+// 		console.dir(er, {depth: null, colors: true});
+// 		res.send({error: "Database error occured."});
+// 		return;
+// 	}
+// });
+
+// expressApp.post("/updateSetup/:token/:setupId", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session."});
+// 		return;
+// 	}
+// 	try {
+// 		const [r] = await db.execute<ResultSetHeader>("UPDATE setups SET type = ?, track = ?, car = ?, weather = ?, wingF = ?, wingR = ?, diffOn = ?, diffOff = ?, camberF = ?, camberR = ?, toeF = ?, toeR = ?, susF = ?, susR = ?, barF = ?, barR = ?, heightF = ?, heightR = ?, brakeP = ?, brakeB = ?, tireFR = ?, tireFL = ?, tireRR = ?, tireRL = ?, public = ?, fuel = ? WHERE id = ? AND author = (SELECT id FROM accounts WHERE token = ?)", [req.body.type, req.body.track, req.body.car, req.body.weather, req.body.wingF, req.body.wingR, req.body.diffOn, req.body.diffOff, req.body.camberF, req.body.camberR, req.body.toeF, req.body.toeR, req.body.susF, req.body.susR, req.body.barF, req.body.barR, req.body.heightF, req.body.heightR, req.body.brakeP, req.body.brakeB, req.body.tireFR, req.body.tireFL, req.body.tireRR, req.body.tireRL, req.body.public, req.body.fuel, req.params.setupId, req.params.token]);
+// 		if(r.affectedRows) {
+// 			res.send({response: "Setup succesfully updated."});
+// 			return;
+// 		} else {
+// 			res.send({error: "You don't permission to change this setup."});
+// 			return;
+// 		}
+// 	} catch(er) {
+// 		console.log("Error while trying to update setup", req.params.setupId);
+// 		console.dir(er, {depth: null, colors: true});
+// 		res.send({error: "Database error occured."});
+// 		return;
+// 	}
+// });
+
+// expressApp.post("/createSetup/:token", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session."});
+// 		return;
+// 	}
+// 	try {
+// 		const [r] = await db.execute<ResultSetHeader>("INSERT INTO setups (`author`, `type`, `track`, `car`, `weather`, `wingF`, `wingR`, `diffOn`, `diffOff`, `camberF`, `camberR`, `toeF`, `toeR`, `susF`, `susR`, `barF`, `barR`, `heightF`, `heightR`, `brakeP`, `brakeB`, `tireFR`, `tireFL`, `tireRR`, `tireRL`, `public`, `fuel`) VALUES ((SELECT `id` FROM accounts WHERE `token` = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [req.params.token, req.body.type, req.body.track, req.body.car, req.body.weather, req.body.wingF, req.body.wingR, req.body.diffOn, req.body.diffOff, req.body.camberF, req.body.camberR, req.body.toeF, req.body.toeR, req.body.susF, req.body.susR, req.body.barF, req.body.barR, req.body.heightF, req.body.heightR, req.body.brakeP, req.body.brakeB, req.body.tireFR, req.body.tireFL, req.body.tireRR, req.body.tireRL, req.body.public, req.body.fuel]);
+// 		if(r.affectedRows) {
+// 			res.send({response: "Setup succesfully created."});
+// 			return;
+// 		} else {
+// 			res.send({error: "Uhhh, setup not created..."});
+// 			return;
+// 		}
+// 	} catch(er) {
+// 		console.log("Error while trying to insert new setup");
+// 		console.dir(er, {depth: null, colors: true});
+// 		res.send({error: "Database error occured."});
+// 		return;
+// 	}
+// });
+
+// expressApp.post("/profilLookup", async (req, res) => {
+// 	if(!req.body.username){
+// 		res.send({error: "Username not provided."});
+// 		return;
+// 	}
+// 	// basic profile info
+// 	const [r] = await db.execute<RowDataPacket[]>("SELECT avatar, registered, description, favCar, favTrack FROM accounts WHERE login = ?", [req.body.username]);
+// 	if(r.length){
+// 		let tmpInfo = { avatar: r[0].avatar, registered: r[0].registered, description: r[0].description, favCar: r[0].favCar, favTrack: r[0].favTrack, userSessions: 0, lastSession: <RowDataPacket | null>null };
+// 		try {
+// 			const [userSessions] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE login = ?)", [req.body.username]);
+// 			tmpInfo.userSessions = userSessions[0].i;
+// 			if(userSessions[0].i > 0){
+// 				const [lastSession] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE login = ?) ORDER BY lastUpdate DESC LIMIT 1", [req.body.username]);
+// 				tmpInfo.lastSession = lastSession[0];
+// 			}
+// 		} catch(er2){
+// 			console.log("Error while trying to obtain information for profilLookup:", req.body.username);
+// 			console.dir(er2, {depth: null, colors: true});
+// 		} finally {
+// 			res.send(tmpInfo);
+// 		}
+// 	} else {
+// 		res.send({error: "There's no profile with such username."});
+// 		return;
+// 	}
+// });
+
+expressApp.post("/changePassword", requireAuth, async (req, res) => {
+	const userInfo = await db.execute("SELECT login, passwd FROM accounts WHERE id = ?", [ req.auth_user_id ], { prepare: true });
+	if(!userInfo.rowLength){
+		res.status(403).json({error: "Account does not exist!"});
 		return;
 	}
+	const checkPassword = await Bun.password.verify(req.body.currentPasswd, userInfo.first().passwd);
+	if(!checkPassword) {
+		res.status(400).json({error: "Invalid current password."});
+		return;
+	}
+	const newPasswdHash = await Bun.password.hash(req.body.newPasswd);
 	try {
-		const [r] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE session_id = ? AND user_id = (SELECT id FROM accounts WHERE token = ?)", [req.body.sessionId, req.params.token]);
-		if(r.length){
-			try {
-				const [r2] = await db.execute<RowDataPacket[]>("SELECT * FROM frames WHERE session_id = ?", [req.body.sessionId]);
-				if(r2.length){
-					let tmpObj: Record<number, any> = {};
-					r2.forEach((singleFrame) => {
-						if(!tmpObj[singleFrame.frame]) tmpObj[singleFrame.frame] = {};
-						tmpObj[singleFrame.frame][singleFrame.data_type] = JSON.parse( inflateRawSync( Buffer.from(singleFrame.data, 'base64') ).toString() );
-					});
-					res.send({
-						data: tmpObj,
-						track: r[0].trackId,
-						type: r[0].sessionType,
-						lastUpdate: r[0].lastUpdate,
-						car: r[0].carId
-					});
-					return;
-				} else {
-					res.send({
-						data: null,
-						track: r[0].trackId,
-						type: r[0].sessionType,
-						lastUpdate: r[0].lastUpdate,
-						car: r[0].carId
-					});
-					return;
-				}
-			} catch(er2) {
-				console.log("Error on sessionDetails while trying to obtain frames for sessionID:", req.body.sessionId);
-				console.dir(er2, { depth: null, colors: true});
-			}
-		} else {
-			res.send({error: "Not permitted or session has been deleted."});
-		}
-	} catch(er){
-		console.log("sessionDetails sql error");
-		console.log(er);
-		res.send({error: "Database error occured."});
-		return;
-	}
-});
-
-expressApp.post("/deleteSession/:token/:sessionId", async (req, res) => {
-	if(!req.params.token || !req.params.sessionId){
-		res.send({error: "Invalid request."});
-		return;
-	}
-	try {
-		const [r] = await db.execute<ResultSetHeader>("DELETE FROM sessions WHERE session_id = ? AND user_id = (SELECT id FROM accounts WHERE token = ?)", [req.params.sessionId, req.params.token]);
-		if(r.affectedRows){
-			try {
-				const [r2] = await db.execute<ResultSetHeader>("DELETE FROM frames WHERE session_id = ?", [req.params.sessionId]);
-				res.send({response: "OK", recordsDeleted: r2.affectedRows});
-				return;
-			} catch(er2){
-				console.log("Error: Session was deleted from sessions table, but couldnt remove data from frames table.");
-				console.dir(er2, { depth: null, colors: true});
-				res.send({response: "OK"});
-			}
-		} else {
-			res.send({error: "Not permitted or session was already deleted."});
-			return;
-		}
-	} catch(er) {
-		console.log("Error while deleting session:", req.params.sessionId);
-		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
-		return;
-	}
-});
-
-expressApp.get("/lastSession", requireAuth, async (req, res) => {
-	const [ lastSession ] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = ? ORDER BY lastUpdate DESC LIMIT 1", [req.auth_user_id]);
-	if(lastSession.length){
-		res.status(200).json({...lastSession[0]});
-		return;
-	} else {
-		res.status(200).send(undefined);
-		return;
-	}
-});
-
-expressApp.post("/mainStats/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	let tmp = {
-		userSessions: 0,
-		allSessions: 0,
-		userSetups: 0,
-		allSetups: 0,
-		lastSession: <RowDataPacket | null>null,
-		favCar: null,
-		favTrack: null
-	};
-	const [allSessions] = await db.query<RowDataPacket[]>("SELECT COUNT(*) as i FROM sessions");
-	tmp.allSessions = allSessions[0].i;
-	const [userSessions] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?)", [req.params.token]);
-	tmp.userSessions = userSessions[0].i;
-	const [allSetups] = await db.query<RowDataPacket[]>("SELECT COUNT(*) as i FROM setups");
-	tmp.allSetups = allSetups[0].i;
-	const [userSetups] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM setups WHERE author = (SELECT id FROM accounts WHERE token = ?)", [req.params.token]);
-	tmp.userSetups = userSetups[0].i;
-	const [fav] = await db.execute<RowDataPacket[]>("SELECT favCar, favTrack FROM accounts WHERE token = ?", [req.params.token]);
-	tmp.favCar = fav[0].favCar;
-	tmp.favTrack = fav[0].favTrack;
-	if(tmp.userSessions){
-		const [lastSession] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?) ORDER BY lastUpdate DESC LIMIT 1", [req.params.token]);
-		tmp.lastSession = lastSession[0];
-	}
-	res.send(tmp);
-});
-
-expressApp.post("/mainStatsFrames/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	let tmp = { user: 0, all: 0 };
-	if(req.body.haveSessions){
-		const [userFrames] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM frames WHERE session_id IN (SELECT session_id FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?))", [req.params.token]);
-		tmp.user = userFrames[0].i;
-	}
-	const [allFrames] = await db.query<RowDataPacket[]>("SELECT COUNT(*) as i FROM frames");
-	tmp.all = allFrames[0].i;
-	res.send(tmp);
-});
-
-expressApp.post("/setups/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	try {
-		const [r] = await db.execute<RowDataPacket[]>("SELECT setups.*, accounts.login, accounts.avatar FROM setups LEFT JOIN accounts ON setups.author = accounts.id WHERE author = (SELECT id FROM accounts WHERE token = ?) OR public = 1", [req.params.token]);
-		if(r.length){
-			res.send({data: r, error: null});
-		} else {
-			res.send({data: null, error: "No setups available to show."})
-		}
-	} catch(er) {
-		console.log("Error while trying to obtain list of available setups.");
-		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
-	}
-});
-
-expressApp.post("/setup/:token/:setupId", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session"});
-		return;
-	}
-	try {
-		const [r] = await db.execute<RowDataPacket[]>("SELECT * FROM setups WHERE id = ? AND (public = 1 OR author = (SELECT id FROM accounts WHERE token = ?))", [req.params.setupId, req.params.token]);
-		if(r.length){
-			res.send({data: r[0]});
+		const r = await db.execute("UPDATE accounts SET passwd = ? WHERE id = ?", [newPasswdHash, req.auth_user_id], { prepare: true });
+		if(r.wasApplied()){
+			res.status(200).json({response: "Password changed!"});
 			return;
 		} else {
-			res.send({error: "You don't have access to that car setup."});
-			return;
-		}
-	} catch(er) {
-		console.log("Error while trying to obtain setup", req.params.setupId, "details.");
-		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."})
-		return;
-	}
-});
-
-expressApp.post("/deleteSetup/:token/:setupId", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	try {
-		const [r] = await db.execute<ResultSetHeader>("DELETE FROM setups WHERE id = ? AND author = (SELECT id FROM accounts WHERE token = ?)", [req.params.setupId, req.params.token]);
-		if(r.affectedRows){
-			res.send({response: "Deleted"});
-			return;
-		} else {
-			res.send({error: "You don't have permission to delete that setup."});
-			return;
-		}
-	} catch(er) {
-		console.log("Error while trying to delete setup id:", req.params.setupId);
-		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
-		return;
-	}
-});
-
-expressApp.post("/updateSetup/:token/:setupId", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	try {
-		const [r] = await db.execute<ResultSetHeader>("UPDATE setups SET type = ?, track = ?, car = ?, weather = ?, wingF = ?, wingR = ?, diffOn = ?, diffOff = ?, camberF = ?, camberR = ?, toeF = ?, toeR = ?, susF = ?, susR = ?, barF = ?, barR = ?, heightF = ?, heightR = ?, brakeP = ?, brakeB = ?, tireFR = ?, tireFL = ?, tireRR = ?, tireRL = ?, public = ?, fuel = ? WHERE id = ? AND author = (SELECT id FROM accounts WHERE token = ?)", [req.body.type, req.body.track, req.body.car, req.body.weather, req.body.wingF, req.body.wingR, req.body.diffOn, req.body.diffOff, req.body.camberF, req.body.camberR, req.body.toeF, req.body.toeR, req.body.susF, req.body.susR, req.body.barF, req.body.barR, req.body.heightF, req.body.heightR, req.body.brakeP, req.body.brakeB, req.body.tireFR, req.body.tireFL, req.body.tireRR, req.body.tireRL, req.body.public, req.body.fuel, req.params.setupId, req.params.token]);
-		if(r.affectedRows) {
-			res.send({response: "Setup succesfully updated."});
-			return;
-		} else {
-			res.send({error: "You don't permission to change this setup."});
-			return;
-		}
-	} catch(er) {
-		console.log("Error while trying to update setup", req.params.setupId);
-		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
-		return;
-	}
-});
-
-expressApp.post("/createSetup/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	try {
-		const [r] = await db.execute<ResultSetHeader>("INSERT INTO setups (`author`, `type`, `track`, `car`, `weather`, `wingF`, `wingR`, `diffOn`, `diffOff`, `camberF`, `camberR`, `toeF`, `toeR`, `susF`, `susR`, `barF`, `barR`, `heightF`, `heightR`, `brakeP`, `brakeB`, `tireFR`, `tireFL`, `tireRR`, `tireRL`, `public`, `fuel`) VALUES ((SELECT `id` FROM accounts WHERE `token` = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [req.params.token, req.body.type, req.body.track, req.body.car, req.body.weather, req.body.wingF, req.body.wingR, req.body.diffOn, req.body.diffOff, req.body.camberF, req.body.camberR, req.body.toeF, req.body.toeR, req.body.susF, req.body.susR, req.body.barF, req.body.barR, req.body.heightF, req.body.heightR, req.body.brakeP, req.body.brakeB, req.body.tireFR, req.body.tireFL, req.body.tireRR, req.body.tireRL, req.body.public, req.body.fuel]);
-		if(r.affectedRows) {
-			res.send({response: "Setup succesfully created."});
-			return;
-		} else {
-			res.send({error: "Uhhh, setup not created..."});
-			return;
-		}
-	} catch(er) {
-		console.log("Error while trying to insert new setup");
-		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
-		return;
-	}
-});
-
-expressApp.post("/profilLookup", async (req, res) => {
-	if(!req.body.username){
-		res.send({error: "Username not provided."});
-		return;
-	}
-	// basic profile info
-	const [r] = await db.execute<RowDataPacket[]>("SELECT avatar, registered, description, favCar, favTrack FROM accounts WHERE login = ?", [req.body.username]);
-	if(r.length){
-		let tmpInfo = { avatar: r[0].avatar, registered: r[0].registered, description: r[0].description, favCar: r[0].favCar, favTrack: r[0].favTrack, userSessions: 0, lastSession: <RowDataPacket | null>null };
-		try {
-			const [userSessions] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE login = ?)", [req.body.username]);
-			tmpInfo.userSessions = userSessions[0].i;
-			if(userSessions[0].i > 0){
-				const [lastSession] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE login = ?) ORDER BY lastUpdate DESC LIMIT 1", [req.body.username]);
-				tmpInfo.lastSession = lastSession[0];
-			}
-		} catch(er2){
-			console.log("Error while trying to obtain information for profilLookup:", req.body.username);
-			console.dir(er2, {depth: null, colors: true});
-		} finally {
-			res.send(tmpInfo);
-		}
-	} else {
-		res.send({error: "There's no profile with such username."});
-		return;
-	}
-});
-
-expressApp.post("/changePassword/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	const hasher = new Bun.CryptoHasher("sha1", process.env.KLUCZ_H);
-	hasher.update(req.body.currentPasswd);
-	const oldPasswdHash = hasher.digest("hex");
-	hasher.update(req.body.newPasswd);
-	const newPasswdHash = hasher.digest("hex");
-	try {
-		const [r] = await db.execute<ResultSetHeader>("UPDATE accounts SET passwd = ? WHERE token = ? AND passwd = ?", [newPasswdHash, req.params.token, oldPasswdHash]);
-		if(r.affectedRows){
-			res.send({response: "Password changed!"});
-			return;
-		} else {
-			res.send({error: "Invalid current password."});
+			res.status(500).json({error: "Password not changed."});
 			return;
 		}
 	} catch(er) {
 		console.log("Error while trying to change user password");
 		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
+		res.status(500).json({error: "Database error occured."});
 		return;
 	}
 });
 
-expressApp.post("/changeDescription/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
+expressApp.post("/changeDescription", requireAuth, async (req, res) => {
 	if(req.body.description && req.body.description.length > 400){
-		res.send({error: "Description is too long. Stay in 400 chars maximum!"});
+		res.status(400).json({error: "Description is too long. Stay in 400 chars maximum!"});
 		return;
 	}
 	try {
-		const [r] = await db.execute<ResultSetHeader>('UPDATE accounts SET `description` = ? WHERE `token` = ?', [req.body.description, req.params.token]);
-		if(r.affectedRows > 0){
-			res.send({response: "Description changed."});
+		const r = await db.execute('UPDATE accounts SET `description` = ? WHERE `id` = ?', [req.body.description, req.auth_user_id], { prepare: true });
+		if(r.wasApplied()){
+			res.status(200).json({response: "Description changed."});
 			return;
 		} else {
-			res.send({error: "Invalid user session."});
+			res.status(403).json({error: "Invalid user session."});
 			return;
 		}
 	} catch(er){
 		console.log("Error while trying to change user description.");
 		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
+		res.status(500).json({error: "Database error occured."});
 		return;
 	}
 });
 
-expressApp.post("/changeAvatar/:token", upload.single('avatarImg'), async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
+expressApp.post("/changeAvatar", requireAuth, upload.single('avatarImg'), async (req, res) => {
 	if(!req.file){
 		res.send({error: "Couldn't upload new image."});
 		return;
 	}
 	// find current avatar and delete it later if its not a default one
-	const [r] = await db.execute<RowDataPacket[]>("SELECT avatar FROM accounts WHERE token = ?", [req.params.token]);
-	if(!r.length){
-		res.send({error: "Invalid user session."});
+	const avatar = await db.execute("SELECT avatar FROM accounts WHERE id = ?", [req.auth_user_id], { prepare: true });
+	if(!avatar.rowLength){
+		res.status(403).json({error: "Invalid user session."});
 		return;
 	}
 	// update the path in database
 	const newImagePath = "/images/" + req.file.destination + req.file.filename;
-	const [r2] = await db.execute<ResultSetHeader>("UPDATE accounts SET avatar = ? WHERE token = ?", [newImagePath, req.params.token]);
-	if(r2.affectedRows){
-		res.send({response: newImagePath});
+	const updateAvatar = await db.execute("UPDATE accounts SET avatar = ? WHERE id = ?", [newImagePath, req.auth_user_id], { prepare: true });
+	if(updateAvatar.wasApplied()){
+		res.status(200).json({response: newImagePath});
 		// new image set up succesfully, remove now previous one
-		// if(r[0].avatar != '/images/avatars/defaultAvatar.png'){
-		// 	await unlink(r[0].avatar);
+		// if(avatar.first().avatar != '/avatars/defaultAvatar.png'){
+		// 	await unlink(avatar.first().avatar);
 		// }
 		return;
 	} else {
-		res.send({error: "There was an issue updating your avatar."});
+		res.status(500).json({error: "There was an issue updating your avatar."});
 		return;
 	}
 });
 
-expressApp.post("/deleteAvatar/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
+expressApp.post("/deleteAvatar", requireAuth, async (req, res) => {
 	try {
-		const [r] = await db.execute<RowDataPacket[]>("SELECT avatar FROM accounts WHERE token = ?", [req.params.token]);
-		if(!r.length){
-			res.send({error: "Invalid user session."});
+		const avatar = await db.execute("SELECT avatar FROM accounts WHERE id = ?", [req.auth_user_id], { prepare: true });
+		if(!avatar.rowLength){
+			res.status(403).json({error: "Invalid user session."});
 			return;
 		}
-		if(r[0].avatar != '/images/avatars/defaultAvatar.png'){
-			const [r2] = await db.execute<ResultSetHeader>("UPDATE accounts SET avatar = '/images/avatars/defaultAvatar.png' WHERE token = ?", [req.params.token]);
-			if(r2.affectedRows){
-				res.send({response: '/images/avatars/defaultAvatar.png'});
-				await unlink(r[0].avatar);
+		if(avatar.first().avatar != '/avatars/defaultAvatar.png'){
+			const updateAvatar = await db.execute("UPDATE accounts SET avatar = '/avatars/defaultAvatar.png' WHERE id = ?", [req.auth_user_id], { prepare: true });
+			if(updateAvatar.wasApplied()){
+				res.status(200).json({response: '/avatars/defaultAvatar.png'});
+				await unlink(avatar.first().avatar);
 				return;
 			} else {
-				res.send({error: "There was an issue trying to delete your avatar."});
+				res.status(500).json({error: "There was an issue trying to delete your avatar."});
 				return;
 			}
+		} else {
+			res.status(403).json({error: "You can't delete default avatar."});
+			return;
 		}
 	} catch(er) {
 		console.log("Error while trying to remove user avatar.");
 		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
+		res.status(500).json({error: "Database error occured."});
 		return;
 	}
 });
 
 expressApp.post("/changeFavourites/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
 	try {
-		const [r] = await db.execute<ResultSetHeader>("UPDATE accounts SET favCar = ?, favTrack = ? WHERE token = ?", [req.body.favCar, req.body.favTrack, req.params.token]);
-		if(r.affectedRows){
-			res.send({response: "Favourites updated."});
+		const updateQuery = await db.execute("UPDATE accounts SET favCar = ?, favTrack = ? WHERE id = ?", [req.body.favCar, req.body.favTrack, req.auth_user_id], { prepare: true });
+		if(updateQuery.wasApplied()){
+			res.status(200).json({response: "Favourites updated."});
 			return;
 		} else {
-			res.send({error: "Invalid user session."});
+			res.status(403).json({error: "Invalid user session."});
 			return;
 		}
 	} catch(er) {
 		console.log("Error while trying to change user favourites");
 		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured."});
+		res.status(500).json({error: "Database error occured."});
 		return;
 	}
 });
 
-expressApp.post("/deleteAccount/:token", async (req, res) => {
-	if(!req.params.token || req.params.token.length != 40){
-		res.send({error: "Invalid user session."});
-		return;
-	}
-	try {
-		const [userId] = await db.execute<RowDataPacket[]>("SELECT id FROM accounts WHERE login = ? AND token = ?", [req.body.login, req.params.token]);
-		if(!userId.length){
-			res.send({error: "Invalid user session."});
-			return;
-		}
-		const [r] = await db.execute<ResultSetHeader>("DELETE FROM accounts WHERE id = ?", [userId[0].id]);
-		if(r.affectedRows){
-			res.send({response: "OK"});
-			try {
-				await db.execute("DELETE FROM setups WHERE author = ?", [userId[0].id]);
-				const [userSessions] = await db.execute<RowDataPacket[]>("SELECT session_id FROM sessions WHERE user_id = ?", [userId[0].id]);
-				if(userSessions.length){
-					await db.execute("DELETE FROM frames WHERE session_id IN ?", [userSessions.map(x => x.session_id)]);
-					await db.execute("DELETE FROM sessions WHERE user_id = ?", [userId[0].id]);
-				}
-			} catch(er2) {
-				console.log("Error while trying to remove sessions, setups and frames, after deleting USER account")
-			}
-			return;
-		} else {
-			res.send({error: "Invalid user session."});
-			return;
-		}
-	} catch(er) {
-		console.log("Error while trying to remove user ACCOUNT!");
-		console.dir(er, {depth: null, colors: true});
-		res.send({error: "Database error occured. Please reach contact with Administrator."});
-		return;
-	}
-});
+// expressApp.post("/deleteAccount/:token", async (req, res) => {
+// 	if(!req.params.token || req.params.token.length != 40){
+// 		res.send({error: "Invalid user session."});
+// 		return;
+// 	}
+// 	try {
+// 		const [userId] = await db.execute<RowDataPacket[]>("SELECT id FROM accounts WHERE login = ? AND token = ?", [req.body.login, req.params.token]);
+// 		if(!userId.length){
+// 			res.send({error: "Invalid user session."});
+// 			return;
+// 		}
+// 		const [r] = await db.execute<ResultSetHeader>("DELETE FROM accounts WHERE id = ?", [userId[0].id]);
+// 		if(r.affectedRows){
+// 			res.send({response: "OK"});
+// 			try {
+// 				await db.execute("DELETE FROM setups WHERE author = ?", [userId[0].id]);
+// 				const [userSessions] = await db.execute<RowDataPacket[]>("SELECT session_id FROM sessions WHERE user_id = ?", [userId[0].id]);
+// 				if(userSessions.length){
+// 					await db.execute("DELETE FROM frames WHERE session_id IN ?", [userSessions.map(x => x.session_id)]);
+// 					await db.execute("DELETE FROM sessions WHERE user_id = ?", [userId[0].id]);
+// 				}
+// 			} catch(er2) {
+// 				console.log("Error while trying to remove sessions, setups and frames, after deleting USER account")
+// 			}
+// 			return;
+// 		} else {
+// 			res.send({error: "Invalid user session."});
+// 			return;
+// 		}
+// 	} catch(er) {
+// 		console.log("Error while trying to remove user ACCOUNT!");
+// 		console.dir(er, {depth: null, colors: true});
+// 		res.send({error: "Database error occured. Please reach contact with Administrator."});
+// 		return;
+// 	}
+// });
 
 
 

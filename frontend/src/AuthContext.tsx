@@ -12,15 +12,16 @@ export type AuthContextData = {
     // login: (login: string, password: string) => Promise<string | null>,
     logout: () => Promise<void>,
     setAccessToken: Dispatch<SetStateAction<string | null>>,
-    refreshAccessToken: () => Promise<string | null>
+    refreshAccessToken: () => Promise<string | null>,
+    refreshProfile: () => Promise<void>
 };
 
 export type AccountInfo = {
-    id: number;
+    id: string;
     login: string,
     avatar: string,
+    banner: string,
     registered: Date,
-    description?: string,
     favCar?: number,
     favTrack?: number,
 }

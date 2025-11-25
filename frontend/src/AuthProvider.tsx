@@ -1,31 +1,8 @@
 import { useState, type FC, type PropsWithChildren, type Dispatch, type SetStateAction, useCallback, useEffect, useLayoutEffect } from "react";
-import { AxiosError, type AxiosInstance, type AxiosRequestHeaders, type InternalAxiosRequestConfig } from "axios";
+import { AxiosError, type AxiosRequestHeaders, type InternalAxiosRequestConfig } from "axios";
 import axios from "axios";
-import { useLocation, useNavigate, type NavigateFunction } from "react-router-dom";
-import { AuthContext } from "./AuthContext";
-
-export type AuthContextData = {
-    user: AccountInfo | null,
-    api: AxiosInstance,
-    navigate: NavigateFunction,
-    accessToken: string | null,
-    isAuth: boolean,
-    // checking: boolean,
-    // login: (login: string, password: string) => Promise<string | null>,
-    logout: () => Promise<void>,
-    setAccessToken: Dispatch<SetStateAction<string | null>>,
-    refreshAccessToken: () => Promise<string | null>
-};
-
-export type AccountInfo = {
-    id: number;
-    login: string,
-    avatar: string,
-    registered: Date,
-    description?: string,
-    favCar?: number,
-    favTrack?: number,
-};
+import { useLocation, useNavigate } from "react-router-dom";
+import { AuthContext, type AccountInfo } from "./AuthContext";
 
 const api = axios.create({
     baseURL: "https://backendformula.zakrzewski.dev",
@@ -94,6 +71,20 @@ export const AuthProvider: FC<PropsWithChildren> = ({children}) => {
         });
         return () => api.interceptors.response.eject(apiRes);
     }, [refreshAccessToken]);
+
+    const refreshProfile = useCallback(async () => {
+        try {
+            const { data } = await api.get<AccountInfo>("/me");
+            setUser(data);
+        } catch(er) {
+            setUser(null);
+            if(axios.isAxiosError(er)){
+                if(er.status === 403){
+                    setToken(null);
+                }
+            }
+        }
+    }, []);
         
     const logout = useCallback(async () => {
         await api.post("/logout");
@@ -103,16 +94,8 @@ export const AuthProvider: FC<PropsWithChildren> = ({children}) => {
 
     useEffect(() => {
         if(!isAuth) return;
-        const fetchMe = async () => {
-            try {
-                const { data } = await api.get<AccountInfo>("/me");
-                setUser(data);
-            } catch {
-                setUser(null);
-            }
-        };
-        fetchMe();
-    }, [isAuth, location.pathname]);
+        refreshProfile();
+    }, [isAuth, location.pathname, refreshProfile]);
 
     return <AuthContext.Provider value={{
         user,
@@ -122,7 +105,8 @@ export const AuthProvider: FC<PropsWithChildren> = ({children}) => {
         isAuth,
         logout,
         setAccessToken: setToken,
-        refreshAccessToken
+        refreshAccessToken,
+        refreshProfile
     }}>
         {children}
     </AuthContext.Provider>;

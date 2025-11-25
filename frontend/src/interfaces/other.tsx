@@ -15,8 +15,8 @@ export interface ICarSetup {
 export interface IUserInfo {
     username: string,
     joined: Date | number,
-    avatar?: string,
-    banner?: string,
+    avatar: string,
+    banner: string,
     favCar?: number,
     favTrack?: number,
     sessionsCount: number,

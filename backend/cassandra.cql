@@ -30,7 +30,7 @@ CREATE TABLE accounts (
     email       text,
     passwd      text,
     avatar      text,
-    description text,
+    banner      text,
     favcar      int,
     favtrack    int,
     ip          text,
@@ -38,9 +38,9 @@ CREATE TABLE accounts (
     reset       text
 );
 
+CREATE INDEX accounts_login_idx ON accounts (login);
 CREATE INDEX accounts_email_idx ON accounts (email);
 CREATE INDEX accounts_ip_idx ON accounts (ip);
-CREATE INDEX accounts_login_idx ON accounts (login);
 CREATE INDEX accounts_reset_idx ON accounts (reset);
 
 create table setups (

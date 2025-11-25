@@ -63,15 +63,19 @@ const storage = multer.diskStorage({
 	destination: (req, file, cb) => {
 		if(file.fieldname === "avatarImg"){
 			cb(null, 'avatars/');
+		} else if(file.fieldname === "bannerImg") {
+			cb(null, 'banners/');
 		} else {
 			cb(null, '/');
 		}
 	},
 	filename: (req, file, cb) => {
 		if(file.fieldname === "avatarImg"){
-			cb(null, req.params.login + '-' + Date.now() + path.extname(file.originalname));
+			cb(null, req.auth_user_id + '-' + Date.now() + path.extname(file.originalname));
+		} else if(file.fieldname === "bannerImg") {
+			cb(null, req.auth_user_id + '-' + Date.now() + path.extname(file.originalname));
 		} else {
-			cb(null, 'inne-' + Date.now() + path.extname(file.originalname));
+			cb(null, 'other-' + Date.now() + path.extname(file.originalname));
 		}
 	}
 });
@@ -264,6 +268,14 @@ expressApp.post("/refresh", async (req, res) => {
 			await db.execute("DELETE FROM access WHERE refresh_token = ? AND user_id = ?", [req.cookies.refresh_token, validateToken.first().user_id]);
 			return;
 		}
+		// check if user exists
+		const findUser = await db.execute("SELECT * FROM accounts WHERE id = ?", [validateToken.first().user_id], { prepare: true });
+		if(!findUser.rowLength){
+			// user doesnt exist
+			res.status(401).json({error: "Your account has been removed."});
+			await db.execute("DELETE FROM access WHERE user_id = ?", [validateToken.first().user_id], { prepare: true });
+			return;
+		}
 		const accessToken = randomBytes(64).toString("hex");
 		const accessExpiry = new Date();
 		accessExpiry.setMinutes(accessExpiry.getMinutes() + 15);
@@ -283,13 +295,13 @@ expressApp.post("/refresh", async (req, res) => {
 });
 
 expressApp.get("/me", requireAuth, async (req, res) => {
-	const userInfo = await db.execute("SELECT login, email, avatar, favcar, favtrack, ip FROM accounts WHERE id = ?", [ req.auth_user_id ], { prepare: true });
+	const userInfo = await db.execute("SELECT login, email, avatar, banner, favcar, favtrack, ip FROM accounts WHERE id = ?", [ req.auth_user_id ], { prepare: true });
 	if(!userInfo.rowLength){
 		res.status(403).json({error: "Your account has been removed."});
 		return;
 	} else {
 		// return response with everything except user previous IP
-		res.status(200).json({login: userInfo.first().login, email: userInfo.first().email, avatar: userInfo.first().avatar, favCar: userInfo.first().favcar, favTrack: userInfo.first().favtrack});
+		res.status(200).json({login: userInfo.first().login, email: userInfo.first().email, avatar: userInfo.first().avatar, banner: userInfo.first().banner, favCar: userInfo.first().favcar, favTrack: userInfo.first().favtrack});
 
 		const userIP = req.headers['x-forwarded-for'];
 		if(typeof(userIP) === "string" &&  userInfo.first().ip != userIP){
@@ -334,7 +346,7 @@ expressApp.post("/register", async (req, res) => {
 		return;
 	}
 	const hasher = await Bun.password.hash(req.body.passwd);
-	const result = await db.execute("INSERT INTO accounts (id, login, passwd, email, avatar) VALUES (?, ?, ?, ?, ?)", [cassandra.types.Uuid.random(), req.body.username, hasher, req.body.email, '/avatars/defaultAvatar.png'], { prepare: true });
+	const result = await db.execute("INSERT INTO accounts (id, login, passwd, email, avatar, banner) VALUES (?, ?, ?, ?, '/avatars/defaultAvatar.png', '/banners/defaultBanner.png')", [cassandra.types.Uuid.random(), req.body.username, hasher, req.body.email], { prepare: true });
 	if(result.wasApplied()){
 		res.status(200).json({response: "Account created."});
 		// notify on email
@@ -699,22 +711,108 @@ expressApp.post("/resetfinal", async (req, res) => {
 // 	}
 // });
 
+interface ISessionOverall {
+    id: number,
+    session_id: bigint | string,
+    sessionType: number,
+    trackId: number,
+    carId: number,
+    lastUpdate: string | Date
+}
+
+interface ICarSetup {
+    id: number,
+    name: string,
+}
+
+interface IUserInfo {
+    username: string,
+    joined: Date | number,
+    avatar: string,
+    banner: string,
+    favCar?: number,
+    favTrack?: number,
+    sessionsCount: number,
+    ownSetups?: ICarSetup[],
+    lastSessions?: ISessionOverall[]
+}
+
+expressApp.get("/profile/:username", async (req, res) => {
+	if(!req.params.username || req.params.username.length < 4 || req.params.username.length > 30){
+		res.status(400).json({error: "Invalid username parameter."});
+		return;
+	}
+	const findUser = await db.execute("SELECT * FROM accounts WHERE login = ?", [req.params.username], { prepare: true });
+	if(!findUser.rowLength){
+		res.status(404).json({error: "User not found."});
+		return;
+	}
+	const responseBody: IUserInfo = {
+		username: findUser.first().login,
+		joined: findUser.first().registered,
+		avatar: findUser.first().avatar,
+		banner: findUser.first().banner, //findUser.first().banner, // "https://i.pinimg.com/736x/2b/90/8e/2b908ec9a631f49faead496b5c430a3f.jpg"
+		favCar: findUser.first().favcar,
+		favTrack: findUser.first().favtrack,
+		sessionsCount: 0
+	};
+	res.status(200).json(responseBody);
+});
+
 expressApp.post("/changePassword", requireAuth, async (req, res) => {
+	if(!req.body.currentPassword){
+		res.status(400).json({error: "Missing value: Current password."});
+		return;
+	}
+	if(!req.body.newPassword){
+		res.status(400).json({error: "Missing value: New password."});
+		return;
+	}
+	if(!req.body.newPassword2){
+		res.status(400).json({error: "Missing value: Repeated new password."});
+		return;
+	}
+	if(req.body.newPassword !== req.body.newPassword2){
+		res.status(400).json({error: "New passwords are not the same."});
+		return;
+	}
+	if(req.body.newPassword.length < 6 || req.body.newPassword > 100){
+		res.status(400).json({error: "Invalid length of new password."});
+		return;
+	}
 	const userInfo = await db.execute("SELECT login, passwd FROM accounts WHERE id = ?", [ req.auth_user_id ], { prepare: true });
 	if(!userInfo.rowLength){
 		res.status(403).json({error: "Account does not exist!"});
 		return;
 	}
-	const checkPassword = await Bun.password.verify(req.body.currentPasswd, userInfo.first().passwd);
+	const checkPassword = await Bun.password.verify(req.body.currentPassword, userInfo.first().passwd);
 	if(!checkPassword) {
 		res.status(400).json({error: "Invalid current password."});
 		return;
 	}
-	const newPasswdHash = await Bun.password.hash(req.body.newPasswd);
+	const newPasswdHash = await Bun.password.hash(req.body.newPassword);
 	try {
 		const r = await db.execute("UPDATE accounts SET passwd = ? WHERE id = ?", [newPasswdHash, req.auth_user_id], { prepare: true });
 		if(r.wasApplied()){
 			res.status(200).json({response: "Password changed!"});
+			console.log(`User ${userInfo.first().login} changed password! Trying to revoke all other sessions except the one which sent request.`);
+			
+			// revoking all this user sessions except the one used to sent request
+			const userSessions = await db.execute("SELECT * FROM access WHERE user_id = ?", [req.auth_user_id], { prepare: true });
+			const queryBatch: {
+				query: string;
+    			params: cassandra.ArrayOrObject
+			}[] = [];
+			userSessions.rows.forEach((sessionRow) => {
+				if(sessionRow.access_token !== req.auth_access_token) {
+					queryBatch.push({
+						query: "DELETE FROM access WHERE user_id = ? AND refresh_token = ?",
+						params: [req.auth_user_id, sessionRow.refresh_token]
+					});
+				}
+			});
+			await db.batch(queryBatch, { prepare: true });
+			
 			return;
 		} else {
 			res.status(500).json({error: "Password not changed."});
@@ -728,31 +826,9 @@ expressApp.post("/changePassword", requireAuth, async (req, res) => {
 	}
 });
 
-expressApp.post("/changeDescription", requireAuth, async (req, res) => {
-	if(req.body.description && req.body.description.length > 400){
-		res.status(400).json({error: "Description is too long. Stay in 400 chars maximum!"});
-		return;
-	}
-	try {
-		const r = await db.execute('UPDATE accounts SET `description` = ? WHERE `id` = ?', [req.body.description, req.auth_user_id], { prepare: true });
-		if(r.wasApplied()){
-			res.status(200).json({response: "Description changed."});
-			return;
-		} else {
-			res.status(403).json({error: "Invalid user session."});
-			return;
-		}
-	} catch(er){
-		console.log("Error while trying to change user description.");
-		console.dir(er, {depth: null, colors: true});
-		res.status(500).json({error: "Database error occured."});
-		return;
-	}
-});
-
 expressApp.post("/changeAvatar", requireAuth, upload.single('avatarImg'), async (req, res) => {
 	if(!req.file){
-		res.send({error: "Couldn't upload new image."});
+		res.status(400).json({error: "Missing image file."});
 		return;
 	}
 	// find current avatar and delete it later if its not a default one
@@ -762,14 +838,14 @@ expressApp.post("/changeAvatar", requireAuth, upload.single('avatarImg'), async 
 		return;
 	}
 	// update the path in database
-	const newImagePath = "/images/" + req.file.destination + req.file.filename;
+	const newImagePath = "/" + req.file.destination + req.file.filename;
 	const updateAvatar = await db.execute("UPDATE accounts SET avatar = ? WHERE id = ?", [newImagePath, req.auth_user_id], { prepare: true });
 	if(updateAvatar.wasApplied()){
 		res.status(200).json({response: newImagePath});
 		// new image set up succesfully, remove now previous one
-		// if(avatar.first().avatar != '/avatars/defaultAvatar.png'){
-		// 	await unlink(avatar.first().avatar);
-		// }
+		if(avatar.first().avatar !== '/avatars/defaultAvatar.png'){
+			await unlink("."+avatar.first().avatar);
+		}
 		return;
 	} else {
 		res.status(500).json({error: "There was an issue updating your avatar."});
@@ -777,18 +853,45 @@ expressApp.post("/changeAvatar", requireAuth, upload.single('avatarImg'), async 
 	}
 });
 
-expressApp.post("/deleteAvatar", requireAuth, async (req, res) => {
+expressApp.post("/changeBanner", requireAuth, upload.single('bannerImg'), async (req, res) => {
+	if(!req.file){
+		res.status(400).json({error: "Missing image file."});
+		return;
+	}
+	// find current avatar and delete it later if its not a default one
+	const banner = await db.execute("SELECT banner FROM accounts WHERE id = ?", [req.auth_user_id], { prepare: true });
+	if(!banner.rowLength){
+		res.status(403).json({error: "Invalid user session."});
+		return;
+	}
+	// update the path in database
+	const newImagePath = "/" + req.file.destination + req.file.filename;
+	const updateBanner = await db.execute("UPDATE accounts SET banner = ? WHERE id = ?", [newImagePath, req.auth_user_id], { prepare: true });
+	if(updateBanner.wasApplied()){
+		res.status(200).json({response: newImagePath});
+		// new image set up succesfully, remove now previous one
+		if(banner.first().banner !== '/banners/defaultBanner.png'){
+			await unlink("."+banner.first().banner);
+		}
+		return;
+	} else {
+		res.status(500).json({error: "There was an issue updating your banner."});
+		return;
+	}
+});
+
+expressApp.post("/removeAvatar", requireAuth, async (req, res) => {
 	try {
 		const avatar = await db.execute("SELECT avatar FROM accounts WHERE id = ?", [req.auth_user_id], { prepare: true });
 		if(!avatar.rowLength){
 			res.status(403).json({error: "Invalid user session."});
 			return;
 		}
-		if(avatar.first().avatar != '/avatars/defaultAvatar.png'){
+		if(avatar.first().avatar !== '/avatars/defaultAvatar.png'){
 			const updateAvatar = await db.execute("UPDATE accounts SET avatar = '/avatars/defaultAvatar.png' WHERE id = ?", [req.auth_user_id], { prepare: true });
 			if(updateAvatar.wasApplied()){
 				res.status(200).json({response: '/avatars/defaultAvatar.png'});
-				await unlink(avatar.first().avatar);
+				await unlink("."+avatar.first().avatar);
 				return;
 			} else {
 				res.status(500).json({error: "There was an issue trying to delete your avatar."});
@@ -806,20 +909,42 @@ expressApp.post("/deleteAvatar", requireAuth, async (req, res) => {
 	}
 });
 
-expressApp.post("/changeFavourites/:token", async (req, res) => {
-	try {
-		const updateQuery = await db.execute("UPDATE accounts SET favCar = ?, favTrack = ? WHERE id = ?", [req.body.favCar, req.body.favTrack, req.auth_user_id], { prepare: true });
-		if(updateQuery.wasApplied()){
-			res.status(200).json({response: "Favourites updated."});
-			return;
-		} else {
-			res.status(403).json({error: "Invalid user session."});
-			return;
-		}
-	} catch(er) {
-		console.log("Error while trying to change user favourites");
-		console.dir(er, {depth: null, colors: true});
-		res.status(500).json({error: "Database error occured."});
+expressApp.post("/changeCar", requireAuth, async (req, res) => {
+	if(req.body.car === undefined){
+		res.status(400).json({error: "Missing car value."});
+		return;
+	}
+	const parsedValue = parseInt(req.body.car);
+	if(isNaN(parsedValue)){
+		res.status(400).json({error: "Invalid car value."});
+		return;
+	}
+	const updateQuery = await db.execute("UPDATE accounts SET favcar = ? WHERE id = ?", [parsedValue === -1 ? null : parsedValue , req.auth_user_id], { prepare: true });
+	if(updateQuery.wasApplied()){
+		res.status(200).json({response: "Favourite car updated."});
+		return;
+	} else {
+		res.status(403).json({error: "Invalid user session."});
+		return;
+	}
+});
+
+expressApp.post("/changeTrack", requireAuth, async (req, res) => {
+	if(req.body.track === undefined){
+		res.status(400).json({error: "Missing track value."});
+		return;
+	}
+	const parsedValue = parseInt(req.body.track);
+	if(isNaN(parsedValue)){
+		res.status(400).json({error: "Invalid track value."});
+		return;
+	}
+	const updateQuery = await db.execute("UPDATE accounts SET favtrack = ? WHERE id = ?", [parsedValue === -1 ? null : parsedValue , req.auth_user_id], { prepare: true });
+	if(updateQuery.wasApplied()){
+		res.status(200).json({response: "Favourite track updated."});
+		return;
+	} else {
+		res.status(403).json({error: "Invalid user session."});
 		return;
 	}
 });

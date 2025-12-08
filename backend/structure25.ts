@@ -5,7 +5,7 @@ export interface PacketHeader {
 	gameMinorVersion: number;
 	packetVersion: number;
 	packetId: number;
-	sessionUID: bigint;
+	sessionUID: string;
 	sessionTime: number;
 	frameIdentifier: number;
     overallFrameIdentifier: number;
@@ -22,7 +22,7 @@ export function parseHeader(view: DataView): PacketHeader{
         gameMinorVersion: view.getUint8(offset + 4),
         packetVersion: view.getUint8(offset + 5),
         packetId: view.getUint8(offset + 6),
-        sessionUID: view.getBigUint64(offset + 7, true),
+        sessionUID: view.getBigUint64(offset + 7, true).toString(),
         sessionTime: view.getFloat32(offset + 15, true),
         frameIdentifier: view.getUint32(offset + 19, true),
         overallFrameIdentifier: view.getUint32(offset + 23, true),

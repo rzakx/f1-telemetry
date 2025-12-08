@@ -1,4 +1,4 @@
-import { parsePacketCarDamageData, parsePacketCarMotionExtra, parsePacketCarSetupData, parsePacketCarStatusData, parsePacketCarTelemetryData, parsePacketClassificationData, parsePacketLapData, parsePacketLobbyInfoData, parsePacketMotionData, parsePacketParticipantsData, parsePacketSessionData, parsePacketSessionHistoryData, parsePacketTimeTrialData, parsePacketTyreSetsData } from "./structure25";
+import { CarDamageData, CarMotionData, CarStatusData, CarTelemetryData, LapData, PacketCarMotionExtra, PacketHeader, PacketSessionData, parsePacketCarDamageData, parsePacketCarMotionExtra, parsePacketCarSetupData, parsePacketCarStatusData, parsePacketCarTelemetryData, parsePacketClassificationData, parsePacketLapData, parsePacketLobbyInfoData, parsePacketMotionData, parsePacketParticipantsData, parsePacketSessionData, parsePacketSessionHistoryData, parsePacketTimeTrialData, parsePacketTyreSetsData } from "./structure25";
 // import mysql, { QueryResult, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import cassandra from "cassandra-driver";
 import { deflateRawSync, inflateRawSync } from "zlib";
@@ -10,6 +10,7 @@ import { unlink } from "fs/promises";
 import multer from "multer";
 import path from "path";
 import cors from "cors";
+import compression from "compression";
 import cookieParser from "cookie-parser";
 import { randomBytes } from "crypto";
 const portHTTP = Number(process.env.PORT_HTTP) || 20778;
@@ -81,26 +82,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({storage: storage});
 
-const usersLastLapNumbers: Record<string, number> = {}; // <sessionID, lapNumber>
-const usersWeatherInfo: { [key: string]: { id: number, airTemp: number, trackTemp: number } } = {}; // key is a sessionID
-const singleRecord = ["carId", "trackId", "sessionType"];
-const temporarySessionIds: Record<string, number> = {}; // <sessionID, count>
-const boundIP: Record<string, string> = {}; // <userIP, userLogin>
-
-// load saved boundIP
-try {
-	const r = await db.execute("SELECT login, ip FROM accounts");
-	if(r.rowLength){
-		r.rows.forEach((w) => {
-			boundIP[w.ip] = w.login;
-		});
-		console.log("boundIP: ", boundIP);
-	}
-} catch(boundIPerr) {
-	console.log("Couldn't load informatcion for boundIP from database accounts table.");
-	console.dir(boundIPerr, {depth: null, colors: true});
-}
-
 declare module "express-serve-static-core" {
 	interface Request {
 		auth_access_token?: string;
@@ -137,9 +118,10 @@ expressApp.use(cors({
 }));
 expressApp.use(cookieParser());
 expressApp.use(express.json());
+expressApp.use(compression());
 
 expressApp.get("/", (req, res) => {
-	res.send({working: true, adres: networkIP, port: portUDP});
+	res.send({working: true, address: networkIP, port: portUDP});
 	return;
 });
 
@@ -295,19 +277,19 @@ expressApp.post("/refresh", async (req, res) => {
 });
 
 expressApp.get("/me", requireAuth, async (req, res) => {
-	const userInfo = await db.execute("SELECT login, email, avatar, banner, favcar, favtrack, ip FROM accounts WHERE id = ?", [ req.auth_user_id ], { prepare: true });
+	const userInfo = await db.execute("SELECT id, login, email, avatar, banner, favcar, favtrack, ip, registered FROM accounts WHERE id = ?", [ req.auth_user_id ], { prepare: true });
 	if(!userInfo.rowLength){
 		res.status(403).json({error: "Your account has been removed."});
 		return;
 	} else {
 		// return response with everything except user previous IP
-		res.status(200).json({login: userInfo.first().login, email: userInfo.first().email, avatar: userInfo.first().avatar, banner: userInfo.first().banner, favCar: userInfo.first().favcar, favTrack: userInfo.first().favtrack});
+		res.status(200).json({id: userInfo.first().id, login: userInfo.first().login, email: userInfo.first().email, avatar: userInfo.first().avatar, banner: userInfo.first().banner, favCar: userInfo.first().favcar, favTrack: userInfo.first().favtrack, registered: userInfo.first().registered });
 
 		const userIP = req.headers['x-forwarded-for'];
 		if(typeof(userIP) === "string" &&  userInfo.first().ip != userIP){
 			//if current IP is different, lets update the value in db
 			await db.execute("UPDATE accounts SET ip = ? WHERE id = ?", [userIP, req.auth_user_id], { prepare: true });
-			boundIP[userIP] = userInfo.first().login;
+			boundIP[userIP] = { login: userInfo.first().login, uuid: userInfo.first().id.toString() };
 		}
 		return;
 	}
@@ -427,19 +409,114 @@ expressApp.post("/resetfinal", async (req, res) => {
 	}
 });
 
-// expressApp.post("/sessions/:token", async (req, res) => {
-// 	if(!req.params.token || req.params.token.length != 40){
-// 		res.send({error: "Invalid user session"});
-// 		return;
-// 	}
-// 	const userSessions = await db.execute("SELECT sessionType, trackId, session_id, lastUpdate, carId FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE token = ?) ORDER BY lastUpdate DESC", [req.params.token], { prepare: true });
-// 	if(userSessions.rowLength){
-// 		res.send({data: userSessions});
-// 	} else {
-// 		res.send({data: null});
-// 	}
-// });
+// todo: add checks if target userId allowed req.auth_user_id to view his sessions
+// todo: add optional filtering by track_id, car_id, session_type and last_update range
+expressApp.get("/sessions/:userId", requireAuth, async (req, res) => {
+	if(!req.params.userId){
+		res.status(400).json({error: "Invalid target user."});
+		return;
+	}
+	console.log("req userid", req.params.userId);
+	console.log("auth_user_id", req.auth_user_id?.toString());
+	let convertTarget;
+	try {
+		console.log("Uuid.equals( Uuid.fromString( param ) )", (req.auth_user_id?.equals(cassandra.types.Uuid.fromString(req.params.userId))));
+		convertTarget = cassandra.types.Uuid.fromString(req.params.userId);
+	} catch (erUID) {
+		res.status(400).json({error: "Invalid target user." });
+	}
+	if(!convertTarget) return;
 
+	try {
+		const userSessions = await db.execute("SELECT * FROM sessions WHERE user_id = ?", [convertTarget], { prepare: true });
+		res.status(200).json({sessions: userSessions.rows.map(s => ({...s, summary: s.summary ? JSON.parse(s.summary) : undefined }))});
+	} catch(er) {
+		console.log("Database error while trying to read session history", er);
+		res.status(500).json({error: "Database error"});
+	}
+});
+
+expressApp.get("/session/:userId/:sessionId", requireAuth, async (req, res) => {
+	if(!req.params.userId){
+		res.status(400).json({error: "Invalid parameter: userID"});
+		return;
+	}
+	let convertTarget;
+	try {
+		convertTarget = cassandra.types.Uuid.fromString(req.params.userId);
+	} catch (erUID) {
+		res.status(400).json({error: "Invalid parameter: userID" });
+		return;
+	}
+	if(!req.params.sessionId){
+		res.status(400).json({error: "Invalid parameter: sessionID"});
+		return;
+	}
+	try {
+		const fetchSession = await db.execute("SELECT * FROM sessions WHERE session_id = ? AND user_id = ?", [req.params.sessionId, convertTarget], { prepare: true });
+		if(!fetchSession.rowLength){
+			res.status(404).json({error: "Session not found."});
+		} else {
+			res.status(200).json({...fetchSession.first(), summary: fetchSession.first().summary ? JSON.parse(fetchSession.first().summary) : undefined });
+		}
+	} catch(er){
+		console.log(er);
+		res.status(500).json({error: "Database error occured."});
+	}
+});
+
+interface IFrameData {
+	carStatus?: Partial<CarStatusData>,
+	carTelemetry?: Partial<CarTelemetryData>,
+	carDamage?: Partial<CarDamageData>,
+	carMotionExtra?: Partial<PacketCarMotionExtra>,
+	carMotion?: Partial<CarMotionData>,
+	lapData?: Partial<LapData>,
+	sessionData?: Partial<PacketSessionData>,
+}
+
+expressApp.get("/sessionFrames/:userId/:sessionId", async (req, res) => {
+	// completeID is a combination of: sessions.session_id + "_" + accounts.id    - which is needed for frames.id
+	// session_id values are received from telemetry, and same users in same session will have same session_id, frames would overwrite themselves...
+	if(!req.params.userId){
+		res.status(400).json({error: "Invalid parameter: userID"});
+		return;
+	}
+	let convertTarget;
+	try {
+		convertTarget = cassandra.types.Uuid.fromString(req.params.userId);
+	} catch (erUID) {
+		res.status(400).json({error: "Invalid parameter: userID" });
+		return;
+	}
+	if(!req.params.sessionId){
+		res.status(400).json({error: "Invalid parameter: sessionID"});
+		return;
+	}
+	
+	// does the session exist?
+	const sessionAuthor = await db.execute("SELECT COUNT(1) FROM sessions WHERE session_id = ? AND user_id = ?", [req.params.sessionId, convertTarget], {prepare: true});
+	if(!sessionAuthor.first().count.toNumber()){
+		res.status(404).json({error: "Session not found."});
+		return;
+	}
+	// TODO
+	// check if req.auth_user_id has access to session frames
+	
+	// TODO: add interfaces for backend and frontend
+	const tmpObj = new Map<number, IFrameData>();
+	const sessionFrames = await db.execute("SELECT * FROM frames WHERE id = ?", [req.params.sessionId + "_" + req.params.userId], { prepare: true, fetchSize: 1_000_000 });
+	console.log("sessionFrames fetched rows:", sessionFrames.rowLength);
+	sessionFrames.rows.forEach(row => {
+		let tmpRow = tmpObj.get(row.frame) || {};
+		const frameKey = row.data_type as keyof IFrameData;
+		tmpRow[frameKey] = JSON.parse(row.data);
+		tmpObj.set(row.frame, tmpRow)
+	});
+	console.log(tmpObj.size); // 21489
+	res.status(200).json({frames: Object.fromEntries(tmpObj)});
+
+});
 // expressApp.post("/sessionDetails/:token", async (req, res) => {
 // 	if(!req.params.token || !req.body.sessionId){
 // 		res.send({error: "Not permitted."});
@@ -518,16 +595,16 @@ expressApp.post("/resetfinal", async (req, res) => {
 // 	}
 // });
 
-// expressApp.get("/lastSession", requireAuth, async (req, res) => {
-// 	const [ lastSession ] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = ? ORDER BY lastUpdate DESC LIMIT 1", [req.auth_user_id]);
-// 	if(lastSession.length){
-// 		res.status(200).json({...lastSession[0]});
-// 		return;
-// 	} else {
-// 		res.status(200).send(undefined);
-// 		return;
-// 	}
-// });
+expressApp.get("/lastSession", requireAuth, async (req, res) => {
+	// res.status(500).json({error: "Not implemented yet."});
+	const lastSession = await db.execute("SELECT * FROM sessions WHERE user_id = ? LIMIT 1", [req.auth_user_id], { prepare: true });
+	if(lastSession.rowLength){
+		res.status(200).json({...lastSession.first()});
+	} else {
+		res.status(200).json(null);
+	}
+	return;
+});
 
 // expressApp.post("/mainStats/:token", async (req, res) => {
 // 	if(!req.params.token || req.params.token.length != 40){
@@ -683,41 +760,34 @@ expressApp.post("/resetfinal", async (req, res) => {
 // 	}
 // });
 
-// expressApp.post("/profilLookup", async (req, res) => {
-// 	if(!req.body.username){
-// 		res.send({error: "Username not provided."});
-// 		return;
-// 	}
-// 	// basic profile info
-// 	const [r] = await db.execute<RowDataPacket[]>("SELECT avatar, registered, description, favCar, favTrack FROM accounts WHERE login = ?", [req.body.username]);
-// 	if(r.length){
-// 		let tmpInfo = { avatar: r[0].avatar, registered: r[0].registered, description: r[0].description, favCar: r[0].favCar, favTrack: r[0].favTrack, userSessions: 0, lastSession: <RowDataPacket | null>null };
-// 		try {
-// 			const [userSessions] = await db.execute<RowDataPacket[]>("SELECT COUNT(*) as i FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE login = ?)", [req.body.username]);
-// 			tmpInfo.userSessions = userSessions[0].i;
-// 			if(userSessions[0].i > 0){
-// 				const [lastSession] = await db.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE user_id = (SELECT id FROM accounts WHERE login = ?) ORDER BY lastUpdate DESC LIMIT 1", [req.body.username]);
-// 				tmpInfo.lastSession = lastSession[0];
-// 			}
-// 		} catch(er2){
-// 			console.log("Error while trying to obtain information for profilLookup:", req.body.username);
-// 			console.dir(er2, {depth: null, colors: true});
-// 		} finally {
-// 			res.send(tmpInfo);
-// 		}
-// 	} else {
-// 		res.send({error: "There's no profile with such username."});
-// 		return;
-// 	}
-// });
+expressApp.get("/users/:login", requireAuth, async (req, res) => {
+	if(!req.params.login){
+		res.status(400).json({error: "Username not specified."});
+		return;
+	}
+	if(req.params.login.length < 3 || req.params.login.length > 30){
+		res.status(400).json({error: "Invalid username length."});
+		return;
+	}
+	try {
+		const findUsers = await db.execute("SELECT id, login, avatar FROM accounts WHERE login LIKE ?", [req.params.login+'%'], { prepare: true });
+		res.status(200).json({
+			result: findUsers.rows
+		});
+	} catch(er){
+		console.log(er);
+		res.status(500).json({error: "Database error occured."});
+		return;
+	}
+});
 
 interface ISessionOverall {
-    id: number,
-    session_id: bigint | string,
-    sessionType: number,
-    trackId: number,
-    carId: number,
-    lastUpdate: string | Date
+    session_id: string,
+    session_type: number,
+    track_id: number,
+    car_id: number,
+    last_update: string | Date,
+	completed: boolean
 }
 
 interface ICarSetup {
@@ -986,39 +1056,52 @@ expressApp.post("/changeTrack", requireAuth, async (req, res) => {
 // 	}
 // });
 
+// const usersLastLapNumbers: Record<string, number> = {}; // <sessionID, lapNumber>
+// const sessionsWeatherInfo: { [key: string]: { id: number, airTemp: number, trackTemp: number } } = {}; // key is a sessionID + userID
+const boundIP: Record<string, { login: string, uuid: cassandra.types.Uuid }> = {}; // <userIP, userLogin>
 
+// load saved boundIP
+try {
+	const r = await db.execute("SELECT id, login, ip FROM accounts");
+	if(r.rowLength){
+		r.rows.forEach((w) => {
+			boundIP[w.ip] = { login: w.login, uuid: w.id.toString() };
+		});
+		console.log("boundIP: ", boundIP);
+	}
+} catch(boundIPerr) {
+	console.log("Couldn't load informatcion for boundIP from database accounts table.");
+	console.dir(boundIPerr, {depth: null, colors: true});
+}
 
-// const storeSessionData = async (
-// 		sessionID: bigint,
-// 		frameID: number,
-// 		dataType: "motion" | "carDamage" | "carStatus" | "telemetry" | "carId" | "trackId" | "lapData" | "weather" | "sessionType",
-// 		data: any,
-// 		userIP: string
-// 	) => {
-// 		// single values to store like car, track or session id are being sent the whole time session is in progress
-// 		// but first 10 values are completely enough to obtain all needed information
-// 		if(singleRecord.includes(dataType)){
-// 			console.log("storeSessionData singleRecord");
-// 			if(temporarySessionIds[sessionID.toString()]) temporarySessionIds[sessionID.toString()] += 1;
-// 			else temporarySessionIds[sessionID.toString()] = 1;
+interface ISavePacket {
+	sessionId: string,
+	userId: cassandra.types.Uuid,
+	dataType: "carStatus" | "carTelemetry" | "carDamage" | "carMotion" | "carMotionExtra" | "lapData" | "car_id" | "track_id" | "session_type" | "sessionData" | "completed" | "summary",
+	data: any,
+	frame?: number
+}
 
-// 			if(temporarySessionIds[sessionID.toString()] > 10) return;
-// 			try {
-// 				await db.execute(`INSERT INTO sessions (session_id, ip, ${dataType}, user_id) VALUES (?, ?, ?, (SELECT id FROM accounts WHERE ip = ?)) ON DUPLICATE KEY UPDATE ${dataType} = ?`, [sessionID, userIP, data, userIP, data]);
-// 			} catch(er){
-// 				console.log("Couldn't save single record value to database...");
-// 				console.dir(er, { depth: null, colors: true });
-// 			}
-// 		} else {
-// 			console.log("storeSessionData frame");
-// 			try {
-// 				await db.execute("INSERT INTO frames (session_id, frame, data_type, data) VALUES (?, ?, ?, ?)", [sessionID, frameID, dataType, deflateRawSync(JSON.stringify(data)).toString('base64')]);
-// 			} catch(er2){
-// 				console.log("Couldn't save frame packet to database...");
-// 				console.dir(er2, { depth: null, colors: true });
-// 			}
-// 		}
-// }
+const singleRecord = ["car_id", "track_id", "session_type", "completed", "summary"];
+const savePacket = async ({sessionId, userId, dataType, data, frame}: ISavePacket) => {
+	if(singleRecord.includes(dataType)){
+		try {
+			await db.execute(`INSERT INTO sessions (session_id, user_id, ${dataType}, last_update) VALUES (?, ?, ?, ?)`, [sessionId, userId, data, Date.now()], { prepare: true });
+		} catch(erSingle) {
+			console.log("Error while trying to save session Info for", sessionId, userId, dataType, data);
+			console.log(erSingle);
+		}
+	} else {
+		// frames ID is a combination of: sessions.session_id + "_" + accounts.id
+		// WHY? session_id values are received from telemetry and same users in same session will have same session_id, frames would overwrite themselves...
+		try {
+			await db.execute("INSERT INTO frames (id, frame, data_type, data) VALUES (?, ?, ?, ?)", [(sessionId+"_"+userId.toString()), frame, dataType, JSON.stringify(data)], {prepare: true});
+		} catch(erFrame){
+			console.log("Error while trying to save frame", frame, dataType, " for ", sessionId, userId );
+			console.log(erFrame);
+		}
+	}
+};
 
 io.on("connection", (socket) => {
 	socket.on("joinRoom", (msg) => {
@@ -1043,14 +1126,28 @@ const socketUDP = await Bun.udpSocket({
                     */
                     let userCarMotion = recvMotion.carMotionData[recvMotion.header.playerCarIndex];
                     // console.dir(recMotion, { depth: null });
-					io.to(driverName).emit("carMotion", recvMotion.carMotionData);
-					io.to(driverName).emit("carMotion2", userCarMotion);
+					io.to(driverName.login).emit("carMotion", recvMotion.carMotionData);
+					io.to(driverName.login).emit("carMotion2", userCarMotion);
+					savePacket({
+						sessionId: recvMotion.header.sessionUID,
+						userId: driverName.uuid,
+						dataType: "carMotion",
+						data: userCarMotion,
+						frame: recvMotion.header.frameIdentifier
+					});
                     break;
 				case 273:
                     // console.log("Motion Ex Data - no parser yet");
 					let recvMotionExtra = parsePacketCarMotionExtra(msg);
-					io.to(driverName).emit("myCarId", recvMotionExtra.header.playerCarIndex);
-					io.to(driverName).emit("motionExtra", {...recvMotionExtra, header: undefined});
+					io.to(driverName.login).emit("myCarId", recvMotionExtra.header.playerCarIndex);
+					io.to(driverName.login).emit("motionExtra", {...recvMotionExtra, header: undefined});
+					savePacket({
+						sessionId: recvMotionExtra.header.sessionUID,
+						userId: driverName.uuid,
+						dataType: "carMotionExtra",
+						data: {...recvMotionExtra, header: undefined},
+						frame: recvMotionExtra.header.frameIdentifier
+					});
                     break;
                 case 753:
                     // console.log("Packet Session Data");
@@ -1066,9 +1163,9 @@ const socketUDP = await Bun.udpSocket({
                         - sector2LapDistanceStart, sector3LapDistanceStart ( distance in m around track where sector starts )
                     */
                     // console.dir(recvSession, { depth: null });
-					io.to(driverName).emit("myCarId", recvSession.header.playerCarIndex);
+					io.to(driverName.login).emit("myCarId", recvSession.header.playerCarIndex);
 					// io.to(driverName).emit("sessionInfo", {...recvSession, header: undefined, weatherForecastSamples: recvSession.weatherForecastSamples.slice(0, recvSession.numWeatherForecastSamples) });
-					io.to(driverName).emit("sessionInfo", {
+					io.to(driverName.login).emit("sessionInfo", {
 						totalLaps: recvSession.totalLaps,
 						trackId: recvSession.trackId,
 						safetyCarStatus: recvSession.safetyCarStatus,
@@ -1081,14 +1178,48 @@ const socketUDP = await Bun.udpSocket({
 						sector3: recvSession.sector3LapDistanceStart,
 						trackLength: recvSession.trackLength
 					});
+					(recvSession.trackId !== 1) && savePacket({
+						sessionId: recvSession.header.sessionUID,
+						userId: driverName.uuid,
+						dataType: "track_id",
+						data: recvSession.trackId
+					});
+					!!recvSession.sessionType && savePacket({
+						sessionId: recvSession.header.sessionUID,
+						userId: driverName.uuid,
+						dataType: "session_type",
+						data: recvSession.sessionType
+					});
+
+					savePacket({
+						sessionId: recvSession.header.sessionUID,
+						userId: driverName.uuid,
+						frame: recvSession.header.frameIdentifier,
+						dataType: "sessionData",
+						data: {
+							...recvSession,
+							header: undefined,
+							marshalZones: undefined,
+							weatherForecastSamples: undefined
+							// ...recvSession.weatherForecastSamples.slice(0, recvSession.numWeatherForecastSamples)
+						}
+					});
+					// it would be cool to strip that saved packet more than just a header, but i'm not sure what values i'll use yet
                     break;
                 case 1285:
                     // console.log("Packet Lap Data");
                     //every car:  car position in race, last lap times, sector 1,2 times, delta to car in front, delta to leader, current lap number, is current lap invalid, resultStatus (DNF, DSQ, active)
                     let recvLapData = parsePacketLapData(msg);
-					io.to(driverName).emit("myCarId", recvLapData.header.playerCarIndex);
-					io.to(driverName).emit("lapData", recvLapData.lapData);
-					io.to(driverName).emit("myLapData", recvLapData.lapData[recvLapData.header.playerCarIndex]);
+					io.to(driverName.login).emit("myCarId", recvLapData.header.playerCarIndex);
+					io.to(driverName.login).emit("lapData", recvLapData.lapData);
+					io.to(driverName.login).emit("myLapData", recvLapData.lapData[recvLapData.header.playerCarIndex]);
+					savePacket({
+						sessionId: recvLapData.header.sessionUID,
+						userId: driverName.uuid,
+						frame: recvLapData.header.frameIdentifier,
+						dataType: "lapData",
+						data: recvLapData.lapData[recvLapData.header.playerCarIndex]
+					});
                     // console.dir(recvLapData, { depth: null });
                     break;
                 case 1284:
@@ -1100,8 +1231,15 @@ const socketUDP = await Bun.udpSocket({
 						liveryColours: part.liveryColours, raceNumber: part.raceNumber, driverId: part.driverId
 					}));
                     // console.dir(usersList, { depth: null });
-					io.to(driverName).emit("myCarId", recvParticipants.header.playerCarIndex);
-					io.to(driverName).emit("participants", usersList);
+					io.to(driverName.login).emit("myCarId", recvParticipants.header.playerCarIndex);
+					io.to(driverName.login).emit("participants", usersList);
+					let findTeamId = recvParticipants.participants.find((v, i) => i === recvParticipants.header.playerCarIndex);
+					(findTeamId?.teamId) && savePacket({
+						sessionId: recvParticipants.header.sessionUID,
+						userId: driverName.uuid,
+						dataType: "car_id",
+						data: findTeamId.teamId
+					});
                     break;
                 case 1133:
                     // console.log("Car Setups Data");
@@ -1115,16 +1253,30 @@ const socketUDP = await Bun.udpSocket({
                     // current speed and gear value, applied gas/brake/clutch/steer/drs, tire/brake/engine temps   aaand surfaceType ids for each wheel <== available for ALL cars
                     let recvTelemetry = parsePacketCarTelemetryData(msg);
                     // console.log(recvTelemetry, { depth: null });
-					io.to(driverName).emit("myCarId", recvTelemetry.header.playerCarIndex);
-					io.to(driverName).emit("carTelemetry", recvTelemetry.carTelemetryData);
+					io.to(driverName.login).emit("myCarId", recvTelemetry.header.playerCarIndex);
+					io.to(driverName.login).emit("carTelemetry", recvTelemetry.carTelemetryData);
+					savePacket({
+						sessionId: recvTelemetry.header.sessionUID,
+						userId: driverName.uuid,
+						frame: recvTelemetry.header.frameIdentifier,
+						dataType: "carTelemetry",
+						data: recvTelemetry.carTelemetryData[recvTelemetry.header.playerCarIndex]
+					});
                     break;
                 case 1239:
                     // console.log("Car Status Data");
                     // fuel, brake bias, ers, rpm values, visualTyreCompound, tyresAgeLaps, drsAllowed
                     let recvCarStatus = parsePacketCarStatusData(msg);
                     // console.dir(recvCarStatus, { depth: null });
-					io.to(driverName).emit("myCarId", recvCarStatus.header.playerCarIndex);
-					io.to(driverName).emit("carStatus", recvCarStatus.carStatusData);
+					io.to(driverName.login).emit("myCarId", recvCarStatus.header.playerCarIndex);
+					io.to(driverName.login).emit("carStatus", recvCarStatus.carStatusData);
+					savePacket({
+						sessionId: recvCarStatus.header.sessionUID,
+						userId: driverName.uuid,
+						frame: recvCarStatus.header.frameIdentifier,
+						dataType: "carStatus",
+						data: recvCarStatus.carStatusData[recvCarStatus.header.playerCarIndex]
+					});
                     break;
                 case 1042:
                     // console.log("Final Classification");
@@ -1132,21 +1284,27 @@ const socketUDP = await Bun.udpSocket({
                     // that tag would indicate that session is ready for all session frames combining and applying compression to reduce transfer to frontend
                     let recvFinal = parsePacketClassificationData(msg);
 
-                    let finalClassification = recvFinal.classificationData.slice(0, recvFinal.numCars).map(car => ({
-                        position: car.position,
-                        pitStops: car.numPitStops,
-                        penaltiesCount: car.numPenalties,
-                        penaltiesTime: car.penaltiesTime,
-                        raceTime: Math.round(car.totalRaceTime*1000), // original value (sec) -> (ms)
-                        bestLap: car.bestLapTimeInMS,
-                        status: car.resultStatus, // 0 = invalid, 1 = inactive, 2 = active, 3 = finished, 4 = didnotfinish, 5 = disqualified, 6 = not classified, 7 = retired
-                        tyreStints: {
-                            actualTyre: car.tyreStintsActual.slice(0, car.numTyreStints),
-                            visualTyre: car.tyreStintsVisual.slice(0, car.numTyreStints),
-                            endLap: car.tyreStintsEndLaps.slice(0, car.numTyreStints)
-                        }
-                    }));
+                    // let finalClassification = recvFinal.classificationData.slice(0, recvFinal.numCars).map(car => ({
+                    //     position: car.position,
+                    //     pitStops: car.numPitStops,
+                    //     penaltiesCount: car.numPenalties,
+                    //     penaltiesTime: car.penaltiesTime,
+                    //     raceTime: Math.round(car.totalRaceTime*1000), // original value (sec) -> (ms)
+                    //     bestLap: car.bestLapTimeInMS,
+                    //     status: car.resultStatus, // 0 = invalid, 1 = inactive, 2 = active, 3 = finished, 4 = didnotfinish, 5 = disqualified, 6 = not classified, 7 = retired
+                    //     tyreStints: {
+                    //         actualTyre: car.tyreStintsActual.slice(0, car.numTyreStints),
+                    //         visualTyre: car.tyreStintsVisual.slice(0, car.numTyreStints),
+                    //         endLap: car.tyreStintsEndLaps.slice(0, car.numTyreStints)
+                    //     }
+                    // }));
                     // console.dir(finalClassification, {depth: null});
+					savePacket({
+						sessionId: recvFinal.header.sessionUID,
+						userId: driverName.uuid,
+						dataType: "completed",
+						data: true
+					});
                     break;
                 case 954:
                     console.log("Lobby Info");
@@ -1157,8 +1315,15 @@ const socketUDP = await Bun.udpSocket({
                     // console.log("Car Damage Data");
                     let recvDamage = parsePacketCarDamageData(msg);
                     // console.dir(recvDamage, { depth: null });
-					io.to(driverName).emit("myCarId", recvDamage.header.playerCarIndex);
-					io.to(driverName).emit("carDamage", recvDamage.carDamageData);
+					io.to(driverName.login).emit("myCarId", recvDamage.header.playerCarIndex);
+					io.to(driverName.login).emit("carDamage", recvDamage.carDamageData);
+					savePacket({
+						sessionId: recvDamage.header.sessionUID,
+						userId: driverName.uuid,
+						frame: recvDamage.header.frameIdentifier,
+						dataType: "carDamage",
+						data: recvDamage.carDamageData[recvDamage.header.playerCarIndex]
+					});
                     break;
                 case 1460:
                     // user lap times in session (array of 100 laps, initially every lap with lapTimeInMS = 0), summary of best sectors and lap (gives lap number)
@@ -1168,17 +1333,30 @@ const socketUDP = await Bun.udpSocket({
                     // if(recvHistory.carIdx != recvHistory.header.playerCarIndex) return;
 					if(recvHistory.numLaps <= 1) return;
 					if(!recvHistory.bestLapTimeLapNum) return;
-					io.to(driverName).emit("bestLap", {carId: recvHistory.carIdx, bestLap: recvHistory.lapHistoryData.slice(0, recvHistory.numLaps - 1).sort((a, b) => a.lapTimeInMS - b.lapTimeInMS)[0] });
+					io.to(driverName.login).emit("bestLap", {carId: recvHistory.carIdx, bestLap: recvHistory.lapHistoryData.slice(0, recvHistory.numLaps - 1).sort((a, b) => a.lapTimeInMS - b.lapTimeInMS)[0] });
                     // console.log("Session History");
 
-                    let lapTimesHistory = recvHistory.lapHistoryData.slice(0, recvHistory.numLaps);
+					if(recvHistory.carIdx === recvHistory.header.playerCarIndex && recvHistory.header.sessionUID){
+						savePacket({
+							sessionId: recvHistory.header.sessionUID,
+							userId: driverName.uuid,
+							dataType: "summary",
+							data: JSON.stringify({
+								...recvHistory,
+								header: undefined,
+								lapHistoryData: recvHistory.lapHistoryData.slice(0, recvHistory.numLaps),
+								tyreStintsHistoryData: recvHistory.tyreStintsHistoryData.slice(0, recvHistory.numTyreStints)
+							})
+						});
+					}
+                    // let lapTimesHistory = recvHistory.lapHistoryData.slice(0, recvHistory.numLaps);
                     // console.dir({ lapTimesHistory, tyreStints: recvHistory.tyreStintsHistoryData.filter(stint => stint.endLap ) }, { depth: null });
                     break;
                 case 231:
                     // same as in Session History Data, have to use carIdx to obtain correct user values,
                     // but when it comes to tyre sets and their wear/usage, it could be cool to track how other drivers handle their tyres... potential indication of struggles and remaining possibilities
-                    let recvTyreSet = parsePacketTyreSetsData(msg);
-                    if(recvTyreSet.carIdx != recvTyreSet.header.playerCarIndex) return;
+                    // let recvTyreSet = parsePacketTyreSetsData(msg);
+                    // if(recvTyreSet.carIdx != recvTyreSet.header.playerCarIndex) return;
                     // console.log("Weekend Tyre Set Data");
 
                     // lets apply filter to list out only available sets...
@@ -1189,7 +1367,7 @@ const socketUDP = await Bun.udpSocket({
                     break;
                 case 101:
                     // console.log("Time Trial Packet");
-                    let recvTimeTrial = parsePacketTimeTrialData(msg);
+                    // let recvTimeTrial = parsePacketTimeTrialData(msg);
                     // console.dir(recvTimeTrial, { depth: null });
                     break;
                 case 1131:

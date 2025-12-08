@@ -12,40 +12,40 @@ import { RiMapPin2Fill } from "react-icons/ri";
 import type { ICarSetup, ISessionOverall, IUserInfo } from "@/interfaces/other";
 import ProfileEditor from "@/components/ProfileEditor";
 
-const _sampleData: IUserInfo = {
-    username: "sotiio",
-    joined: Date.now(),
-    // avatar: "https://i.pinimg.com/1200x/3b/d1/45/3bd1459403838bf4b469e4f1822a09b8.jpg",
-    avatar: "https://i.pinimg.com/1200x/9e/b4/ec/9eb4ec004250ff3eecabab801f712dd5.jpg",
-    favCar: 3,
-    favTrack: 12,
-    sessionsCount: 15,
-    banner: "https://i.pinimg.com/736x/2b/90/8e/2b908ec9a631f49faead496b5c430a3f.jpg",
-    // banner: "https://i.pinimg.com/1200x/e4/e3/6c/e4e36c20b73036f002e2ed4c5b755b62.jpg",
-    lastSessions: [
-        { id: 1, session_id: "13950350737761035143", sessionType: 18, trackId: 16, carId: 1, lastUpdate: "2025-07-26 21:44:18" },
-        { id: 3, session_id: "3295745206928777656", sessionType: 10, trackId: 3, carId: 2, lastUpdate: "2024-02-08 13:35:19" },
-        { id: 2, session_id: "15045588325593535537", sessionType: 1, trackId: 0, carId: 4, lastUpdate: "2024-02-08 13:26:19" },
-        // { id: 4, session_id: "114045989741456593", sessionType: 8, trackId: 26, carId: 8, lastUpdate: "2025-07-26 17:55:52" },
-        // { id: 14, session_id: "6945973258424165387", sessionType: 10, trackId: 26, carId: 8, lastUpdate: "2025-07-26 18:05:31" },
-        // { id: 24, session_id: "13614129455819516508", sessionType: 8, trackId: 11, carId: 8, lastUpdate: "2025-07-26 18:37:32" },
-        // { id: 34, session_id: "7130652750442951773", sessionType: 10, trackId: 11, carId: 8, lastUpdate: "2025-07-26 18:44:47" },
-        // { id: 45, session_id: "395946150101457433", sessionType: 10, trackId: 13, carId: 8, lastUpdate: "2025-07-26 19:16:12" },
-        // { id: 54, session_id: "9471100739375559781", sessionType: 10, trackId: 32, carId: 8, lastUpdate: "2025-07-26 19:44:52" },
-        // { id: 64, session_id: "2426938530349640028", sessionType: 11, trackId: 32, carId: 8, lastUpdate: "2025-07-26 19:55:35" },
-        // { id: 74, session_id: "13426565436754504332", sessionType: 10, trackId: 16, carId: 8, lastUpdate: "2025-07-26 20:25:12" },
-        // { id: 85, session_id: "8368491506943193386", sessionType: 11, trackId: 16, carId: 8, lastUpdate: "2025-07-26 20:35:06" },
-        // { id: 94, session_id: "8321909201213334216", sessionType: 10, trackId: 14, carId: 8, lastUpdate: "2025-07-26 21:03:40" },
-        // { id: 105, session_id: "7824823387758151255", sessionType: 1, trackId: 3, carId: 1, lastUpdate: "2025-07-26 21:44:18" },
-        // { id: 114, session_id: "2207794856101248288", sessionType: 10, trackId: 3, carId: 1, lastUpdate: "2025-07-26 22:03:49" },
-        // { id: 124, session_id: "5922575362886473320", sessionType: 10, trackId: 29, carId: 1, lastUpdate: "2025-07-26 22:32:26" },
-    ],
-    ownSetups: [
-        // { id: 1, name: "Bahrain Quali Dry" },
-        // { id: 2, name: "Saudi Race Wet" },
-        // { id: 3, name: "Abu Dhabi myteam dry" }
-    ]
-};
+// const _sampleData: IUserInfo = {
+//     username: "sotiio",
+//     joined: Date.now(),
+//     // avatar: "https://i.pinimg.com/1200x/3b/d1/45/3bd1459403838bf4b469e4f1822a09b8.jpg",
+//     avatar: "https://i.pinimg.com/1200x/9e/b4/ec/9eb4ec004250ff3eecabab801f712dd5.jpg",
+//     favCar: 3,
+//     favTrack: 12,
+//     sessionsCount: 15,
+//     banner: "https://i.pinimg.com/736x/2b/90/8e/2b908ec9a631f49faead496b5c430a3f.jpg",
+//     // banner: "https://i.pinimg.com/1200x/e4/e3/6c/e4e36c20b73036f002e2ed4c5b755b62.jpg",
+//     lastSessions: [
+//         { id: 1, session_id: "13950350737761035143", sessionType: 18, trackId: 16, carId: 1, lastUpdate: "2025-07-26 21:44:18" },
+//         { id: 3, session_id: "3295745206928777656", sessionType: 10, trackId: 3, carId: 2, lastUpdate: "2024-02-08 13:35:19" },
+//         { id: 2, session_id: "15045588325593535537", sessionType: 1, trackId: 0, carId: 4, lastUpdate: "2024-02-08 13:26:19" },
+//         // { id: 4, session_id: "114045989741456593", sessionType: 8, trackId: 26, carId: 8, lastUpdate: "2025-07-26 17:55:52" },
+//         // { id: 14, session_id: "6945973258424165387", sessionType: 10, trackId: 26, carId: 8, lastUpdate: "2025-07-26 18:05:31" },
+//         // { id: 24, session_id: "13614129455819516508", sessionType: 8, trackId: 11, carId: 8, lastUpdate: "2025-07-26 18:37:32" },
+//         // { id: 34, session_id: "7130652750442951773", sessionType: 10, trackId: 11, carId: 8, lastUpdate: "2025-07-26 18:44:47" },
+//         // { id: 45, session_id: "395946150101457433", sessionType: 10, trackId: 13, carId: 8, lastUpdate: "2025-07-26 19:16:12" },
+//         // { id: 54, session_id: "9471100739375559781", sessionType: 10, trackId: 32, carId: 8, lastUpdate: "2025-07-26 19:44:52" },
+//         // { id: 64, session_id: "2426938530349640028", sessionType: 11, trackId: 32, carId: 8, lastUpdate: "2025-07-26 19:55:35" },
+//         // { id: 74, session_id: "13426565436754504332", sessionType: 10, trackId: 16, carId: 8, lastUpdate: "2025-07-26 20:25:12" },
+//         // { id: 85, session_id: "8368491506943193386", sessionType: 11, trackId: 16, carId: 8, lastUpdate: "2025-07-26 20:35:06" },
+//         // { id: 94, session_id: "8321909201213334216", sessionType: 10, trackId: 14, carId: 8, lastUpdate: "2025-07-26 21:03:40" },
+//         // { id: 105, session_id: "7824823387758151255", sessionType: 1, trackId: 3, carId: 1, lastUpdate: "2025-07-26 21:44:18" },
+//         // { id: 114, session_id: "2207794856101248288", sessionType: 10, trackId: 3, carId: 1, lastUpdate: "2025-07-26 22:03:49" },
+//         // { id: 124, session_id: "5922575362886473320", sessionType: 10, trackId: 29, carId: 1, lastUpdate: "2025-07-26 22:32:26" },
+//     ],
+//     ownSetups: [
+//         // { id: 1, name: "Bahrain Quali Dry" },
+//         // { id: 2, name: "Saudi Race Wet" },
+//         // { id: 3, name: "Abu Dhabi myteam dry" }
+//     ]
+// };
 
 const RecentActivity = memo(({ setups, sessions }: { setups: ICarSetup[] | undefined, sessions: ISessionOverall[] | undefined }) => {
     return (
@@ -62,15 +62,15 @@ const RecentActivity = memo(({ setups, sessions }: { setups: ICarSetup[] | undef
                     if (index > 4) return;
                     return <div className="rounded-md bg-sidebar w-full px-3 py-2 flex gap-8 justify-between items-center">
                         <div>
-                            <span className="text-lg tracking-wider">{sessionNameById[session.sessionType]}</span>
+                            <span className="text-lg tracking-wider">{sessionNameById[session.session_type]}</span>
                             <div className="space-x-4">
-                                <p className="text-sm inline tracking-wider text-secondary-300"><RiMapPin2Fill className="inline -mt-1" /> {trackNameById[session.trackId]}</p>
-                                <p className="text-sm inline tracking-wider text-secondary-400"><FaUsers className="inline text-lg mr-1 -mt-0.5" /> {getTeamById[session.carId].name}</p>
+                                <p className="text-sm inline tracking-wider text-secondary-300"><RiMapPin2Fill className="inline -mt-1" /> {trackNameById[session.track_id]}</p>
+                                <p className="text-sm inline tracking-wider text-secondary-400"><FaUsers className="inline text-lg mr-1 -mt-0.5" /> {getTeamById[session.car_id].name}</p>
                             </div>
                         </div>
                         <div className="text-right">
                             <p className="text-xs">Last update</p>
-                            <p className="text-sm text-primary">{new Date(session.lastUpdate).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "long" })}</p>
+                            <p className="text-sm text-primary">{new Date(session.last_update).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "long" })}</p>
                         </div>
                     </div>
                 }) : <p className="bg-sidebar rounded-md w-full px-4 py-3 text-sm">No sessions available.</p>}

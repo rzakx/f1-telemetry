@@ -1,22 +1,12 @@
 export const backendURL: string = "https://backendformula.zakrzewski.dev";
-export type sessionData = {
-    id: number,
-    session_id: string,
-    user_id: number,
-    car_id: number,
-    track_id: number,
-    sessionType: number,
-    lastUpdate: Date,
-    ip?: string,
-};
 export const ersModeNames: Array<string> = ["None", "Medium", "Hotlap", "Overtake"];
-export const tireImages = {
-    'Soft': 'tiresoft.svg',
-    'Medium': 'tiremedium.svg',
-    'Hard': 'tirehard.svg',
-    'Inter': 'tireinter.svg',
-    'Wet': 'tirewet.svg',
-    'Ultra Soft': 'tireultrasoft.svg'
+export const tireImages: Record<string, string> = {
+    'Soft': '/images/tiresoft.svg',
+    'Medium': '/images/tiremedium.svg',
+    'Hard': '/images/tirehard.svg',
+    'Inter': '/images/tireinter.svg',
+    'Wet': '/images/tirewet.svg',
+    'Ultra Soft': '/images/tireultrasoft.svg'
 };
 export const tireNameVisual: Record<number, string> = {
 	7: "Inter",

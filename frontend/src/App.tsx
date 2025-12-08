@@ -7,6 +7,8 @@ import ProtectedRoute from "./ProtectedRoute";
 import Realtime from "./pages/Realtime";
 import MapGenerator from "./pages/MapGenerator";
 import Profile from "./pages/Profile";
+import Sessions from "./pages/Sessions";
+import Session from "./pages/Session";
 
 const App = () => {
 	return (
@@ -23,8 +25,8 @@ const App = () => {
 							<Route path='/' element={<Mainpage />} />
 							<Route path='/telemetry' element={<Realtime />} />
 							<Route path='/mapa' element={<MapGenerator />} />
-							<Route path='/sessions' element={<>User sessions</>} />
-							<Route path='/session/:sessionId' element={<>User session</>} />
+							<Route path='/sessions' element={<Sessions />} />
+							<Route path='/session/:userId/:sessionId' element={<Session />} />
 							<Route path='/setups' element={<>Available setups</>} />
 							<Route path='/setup/:setupId' element={<>Exact setup</>} />
 							<Route path='/profile' element={<Profile />} />

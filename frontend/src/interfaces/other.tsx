@@ -1,10 +1,14 @@
+import type { IPacketSessionHistoryData } from "./f1struct"
+
 export interface ISessionOverall {
-    id: number,
-    session_id: bigint | string,
-    sessionType: number,
-    trackId: number,
-    carId: number,
-    lastUpdate: string | Date
+    user_id?: string,
+    session_id: string,
+    session_type: number,
+    track_id: number,
+    car_id: number,
+    last_update: string | Date,
+    completed: boolean,
+    summary?: IPacketSessionHistoryData
 }
 
 export interface ICarSetup {

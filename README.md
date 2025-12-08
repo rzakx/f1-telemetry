@@ -1,4 +1,7 @@
-# TrackVision - Analytical application processing telemetry data
+# TrackVision - Analyze and share your racing data
+### Notice
+**Application is currently under re-work progress. If you wish to use or view source code of completed, older project, check [releases](https://github.com/rzakx/f1-telemetry/releases) section!**
+
 ## Description
 Implementation of a browser-based web application with main goal being to offer easy and clear access to racing telemetry share, storage and tools which can be used to improve driver skills, without the need to install any additional software on users device.
 
@@ -15,6 +18,10 @@ Used technologies: TypeScript, React, Tailwind, shadcn, recharts, Bun, ExpressJS
 
 ## App access
 Application is available at [https://formula.zakrzewski.dev](https://formula.zakrzewski.dev) but be aware, that it's a personal project, just being publicly open. You might encounter frontend switching from production build to dev environment or backend not responding at any time. If that happens I'm probably modifying or creating some new things, so there's a chance you'll see things broken.
+
+## Telemetry Structure
+Developers of the F1 25 game shared their telemetry output structures [here](https://forums.ea.com/t5/s/tghpe58374/attachments/tghpe58374/f1-games-game-info-hub-en/61/4/Data%20Output%20from%20F1%2025%20v3.pdf).
+I've defined TypeScript interfaces matching struct defined in previously mentioned docs. Parse functions are based on low-level DataView interface methods returning objects with same naming convention ( but without prefixes like m_ ). Not every values are used and in some functionalities some objects - when passed through the WebSocket or stored in database - are stripped by undefining already existing values.
 
 ## Why such backend and database choice?
 Study was conducted of the impact of selected backend and database technologies on the performance and stability of an analytical application processing telemetry data. As part of the research, a series of load tests were designed and conducted in various technological configurations, including three backend environments (Node.js, Deno, Bun) and four database systems (MariaDB, PostgreSQL, MongoDB, Cassandra).

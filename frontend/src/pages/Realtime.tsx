@@ -768,9 +768,10 @@ const Realtime = () => {
 						<SelectValue placeholder="Wybierz kierowce" />
 					</SelectTrigger>
 					<SelectContent>
-						<SelectItem value="sotiio">sotiio</SelectItem>
+						{ user && <SelectItem value={user.login}>{user.login}</SelectItem> }
+						{/* <SelectItem value="sotiio">sotiio</SelectItem>
 						<SelectItem value="konyu">konyu</SelectItem>
-						<SelectItem value="kieszu">kieszu</SelectItem>
+						<SelectItem value="kieszu">kieszu</SelectItem> */}
 					</SelectContent>
 				</Select>
 			</div>

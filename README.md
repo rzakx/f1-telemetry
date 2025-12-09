@@ -17,7 +17,12 @@ Application offers functionalities like:
 Used technologies: TypeScript, React, Tailwind, shadcn, recharts, Bun, ExpressJS, SocketIO, Cassandra, Apache2
 
 ## App access
-Application is available at [https://formula.zakrzewski.dev](https://formula.zakrzewski.dev) but be aware, that it's a personal project, just being publicly open. You might encounter frontend switching from production build to dev environment or backend not responding at any time. If that happens I'm probably modifying or creating some new things, so there's a chance you'll see things broken.
+- **Website:** [https://formula.zakrzewski.dev](https://formula.zakrzewski.dev)
+- **Demo account credentials:**
+  - Login: `demo`
+  - Password: `example123`
+
+Be aware, that it's a personal project, just being publicly open. You might encounter frontend switching from production build to dev environment or backend not responding at any time. If that happens I'm probably modifying or creating some new things, so there's a chance you'll see things broken.
 
 ## Telemetry Structure
 Developers of the F1 25 game shared their telemetry output structures [here](https://forums.ea.com/t5/s/tghpe58374/attachments/tghpe58374/f1-games-game-info-hub-en/61/4/Data%20Output%20from%20F1%2025%20v3.pdf).

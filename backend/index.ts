@@ -1,4 +1,4 @@
-import { CarDamageData, CarMotionData, CarStatusData, CarTelemetryData, LapData, PacketCarMotionExtra, PacketHeader, PacketSessionData, parsePacketCarDamageData, parsePacketCarMotionExtra, parsePacketCarSetupData, parsePacketCarStatusData, parsePacketCarTelemetryData, parsePacketClassificationData, parsePacketLapData, parsePacketLobbyInfoData, parsePacketMotionData, parsePacketParticipantsData, parsePacketSessionData, parsePacketSessionHistoryData, parsePacketTimeTrialData, parsePacketTyreSetsData } from "./structure25";
+import { CarDamageData, CarMotionData, CarStatusData, CarTelemetryData, LapData, PacketCarMotionExtra, PacketHeader, PacketSessionData, PacketSessionHistoryData, parsePacketCarDamageData, parsePacketCarMotionExtra, parsePacketCarSetupData, parsePacketCarStatusData, parsePacketCarTelemetryData, parsePacketClassificationData, parsePacketLapData, parsePacketLobbyInfoData, parsePacketMotionData, parsePacketParticipantsData, parsePacketSessionData, parsePacketSessionHistoryData, parsePacketTimeTrialData, parsePacketTyreSetsData } from "./structure25";
 // import mysql, { QueryResult, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import cassandra from "cassandra-driver";
 import { deflateRawSync, inflateRawSync } from "zlib";
@@ -184,6 +184,7 @@ expressApp.post("/login", async (req, res) => {
 			if(checkPassword){
 				const access_token = randomBytes(64).toString("hex");
 				const access_token_expiry = new Date();
+				// access_token_expiry.setSeconds(access_token_expiry.getSeconds() + 15);
 				access_token_expiry.setMinutes(access_token_expiry.getMinutes() + 15);
 
 				const refresh_token = randomBytes(64).toString("hex");
@@ -260,6 +261,7 @@ expressApp.post("/refresh", async (req, res) => {
 		}
 		const accessToken = randomBytes(64).toString("hex");
 		const accessExpiry = new Date();
+		// accessExpiry.setSeconds(accessExpiry.getSeconds() + 15);
 		accessExpiry.setMinutes(accessExpiry.getMinutes() + 15);
 		const updateAccess = await db.execute("UPDATE access SET access_token = ?, access_token_expiry = ? WHERE refresh_token = ? AND user_id = ?", [accessToken, accessExpiry, req.cookies.refresh_token, validateToken.first().user_id], { prepare: true });
 		if(updateAccess.wasApplied()){
@@ -409,8 +411,17 @@ expressApp.post("/resetfinal", async (req, res) => {
 	}
 });
 
-// todo: add checks if target userId allowed req.auth_user_id to view his sessions
-// todo: add optional filtering by track_id, car_id, session_type and last_update range
+export interface ISessionOverall {
+    user_id: string,
+    session_id: string,
+    session_type: number,
+    track_id: number,
+    car_id: number,
+    last_update: string | Date,
+    completed: boolean,
+    summary?: PacketSessionHistoryData | string
+}
+
 expressApp.get("/sessions/:userId", requireAuth, async (req, res) => {
 	if(!req.params.userId){
 		res.status(400).json({error: "Invalid target user."});
@@ -426,15 +437,19 @@ expressApp.get("/sessions/:userId", requireAuth, async (req, res) => {
 		res.status(400).json({error: "Invalid target user." });
 	}
 	if(!convertTarget) return;
-
+	
 	try {
 		const userSessions = await db.execute("SELECT * FROM sessions WHERE user_id = ?", [convertTarget], { prepare: true });
-		res.status(200).json({sessions: userSessions.rows.map(s => ({...s, summary: s.summary ? JSON.parse(s.summary) : undefined }))});
+		let tmpObj: ISessionOverall[] = userSessions.rows.map(s => ({...(s as unknown as ISessionOverall), summary: s.summary ? JSON.parse(s.summary) : undefined }));
+		tmpObj.sort((a, b) => a.last_update < b.last_update ? 1 : -1);
+		res.status(200).json({sessions: tmpObj});
 	} catch(er) {
 		console.log("Database error while trying to read session history", er);
 		res.status(500).json({error: "Database error"});
 	}
 });
+// todo: add checks if target userId allowed req.auth_user_id to view his sessions
+// todo: add optional filtering by track_id, car_id, session_type and last_update range
 
 expressApp.get("/session/:userId/:sessionId", requireAuth, async (req, res) => {
 	if(!req.params.userId){
@@ -597,9 +612,11 @@ expressApp.get("/sessionFrames/:userId/:sessionId", async (req, res) => {
 
 expressApp.get("/lastSession", requireAuth, async (req, res) => {
 	// res.status(500).json({error: "Not implemented yet."});
-	const lastSession = await db.execute("SELECT * FROM sessions WHERE user_id = ? LIMIT 1", [req.auth_user_id], { prepare: true });
+	const lastSession = await db.execute("SELECT * FROM sessions WHERE user_id = ?", [req.auth_user_id], { prepare: true });
 	if(lastSession.rowLength){
-		res.status(200).json({...lastSession.first()});
+		let tmpObj: ISessionOverall[] = lastSession.rows.map(s => ({...(s as unknown as ISessionOverall), summary: s.summary ? JSON.parse(s.summary) : undefined }));
+		tmpObj.sort((a, b) => a.last_update < b.last_update ? 1 : -1);
+		res.status(200).json({...tmpObj[0]});
 	} else {
 		res.status(200).json(null);
 	}
@@ -780,15 +797,6 @@ expressApp.get("/users/:login", requireAuth, async (req, res) => {
 		return;
 	}
 });
-
-interface ISessionOverall {
-    session_id: string,
-    session_type: number,
-    track_id: number,
-    car_id: number,
-    last_update: string | Date,
-	completed: boolean
-}
 
 interface ICarSetup {
     id: number,

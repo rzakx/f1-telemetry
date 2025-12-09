@@ -1,4 +1,4 @@
-import { useState, type FC, type PropsWithChildren, type Dispatch, type SetStateAction, useCallback, useEffect, useLayoutEffect } from "react";
+import { useState, type FC, type PropsWithChildren, type Dispatch, type SetStateAction, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { AxiosError, type AxiosRequestHeaders, type InternalAxiosRequestConfig } from "axios";
 import axios from "axios";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -14,9 +14,24 @@ export const AuthProvider: FC<PropsWithChildren> = ({children}) => {
     const location = useLocation();
     const [ user, setUser ] = useState<AccountInfo | null>(null);
     const [ accessToken, setAccessToken ] = useState<string | null>(localStorage.getItem("accessToken") || null);
-    // const [ _checking, setChecking ] = useState<boolean>(true);
-
     const isAuth = Boolean(accessToken);
+    const isRefreshing = useRef(false);
+
+    const failedQueue = useRef<{
+        resolve: (token: string | null) => void;
+        reject: (error: unknown) => void;
+    }[]>([]);
+
+    const processQueue = (error: unknown, token: string | null = null) => {
+        failedQueue.current.forEach(promise => {
+            if (error) {
+                promise.reject(error);
+            } else {
+                promise.resolve(token);
+            }
+        });
+        failedQueue.current = [];
+    };
 
     const setToken: Dispatch<SetStateAction<string | null>> = (token) => {
         if(typeof token === "function"){
@@ -34,14 +49,25 @@ export const AuthProvider: FC<PropsWithChildren> = ({children}) => {
     };
 
     const refreshAccessToken = useCallback(async () => {
+        if(isRefreshing.current){
+            return new Promise<string | null>((resolve, reject) => {
+                failedQueue.current.push({ resolve, reject });
+            })
+        }
+        isRefreshing.current = true;
         try {
             const { data } = await axios.post<{ access_token: string}>("https://backendformula.zakrzewski.dev/refresh", {}, { withCredentials: true });
             console.log("Refreshed Access Token succesfully.")
             setToken(data.access_token);
+            processQueue(null, data.access_token);
+            isRefreshing.current = false;
             return data.access_token;
-        } catch(_er) {
+        } catch(er) {
+            console.log("Failed to refresh access token.")
+            processQueue(er, null);
             setToken(null);
             setUser(null);
+            isRefreshing.current = false;
             return null;
         }
     }, []);
@@ -75,9 +101,19 @@ export const AuthProvider: FC<PropsWithChildren> = ({children}) => {
     const refreshProfile = useCallback(async () => {
         try {
             const { data } = await api.get<AccountInfo>("/me");
-            setUser(data);
+            setUser(x => {
+                if(x == null) return data;
+                if(x?.id !== data.id) return data;
+                if(x?.login !== data.login) return data;
+                if(x?.avatar !== data.avatar) return data;
+                if(x?.banner !== data.banner) return data;
+                if(x?.favCar !== data.favCar) return data;
+                if(x?.favTrack !== data.favTrack) return data;
+                if(x?.registered !== data.registered) return data;
+                return x;
+            });
         } catch(er) {
-            setUser(null);
+            console.log("Failed to fetch /me");
             if(axios.isAxiosError(er)){
                 if(er.status === 403){
                     setToken(null);
@@ -93,6 +129,7 @@ export const AuthProvider: FC<PropsWithChildren> = ({children}) => {
     }, []);
 
     useEffect(() => {
+        console.log("New path: ", location.pathname);
         if(!isAuth) return;
         refreshProfile();
     }, [isAuth, location.pathname, refreshProfile]);

@@ -23,7 +23,7 @@ const Mainpage = () => {
     const [ serviceChecked, setServiceChecked ] = useState<boolean>(false);
     const [ serviceDetails, setServiceDetails ] = useState<IServiceDetails>();
     const [ currentDate, setCurrentDate ] = useState<Date>(new Date());
-    const { user, api } = useAuth();
+    const { user, api, isAuth } = useAuth();
 
     useEffect(() => {
         const refreshDate = setInterval(() => {
@@ -46,9 +46,6 @@ const Mainpage = () => {
                 setLastSession(undefined);
                 return;
             }
-            const tmp = r.data;
-            if(tmp.summary) tmp['summary'] = JSON.parse(tmp.summary)
-            console.log(tmp);
             setLastSession(r.data);
         }).catch((er) => {
             console.log(er);
@@ -57,12 +54,18 @@ const Mainpage = () => {
     }, [api]);
 
     useEffect(() => {
-        if(!lastSessionChecked) fetchLastSession();
-    }, [lastSessionChecked, fetchLastSession]);
+        if(!user) return;
+        if(lastSessionChecked) return;
+        fetchLastSession();
+    }, [lastSessionChecked, fetchLastSession, user]);
 
     useEffect(() => {
         if(!serviceChecked) fetchServiceDetails();
     }, [ fetchServiceDetails, serviceChecked ]);
+
+    useEffect(() => {
+        console.log(user, isAuth);
+    }, [user, isAuth])
 
     return(
         <div className="w-dvw h-dvh flex p-10 pl-26 items-center justify-center">
@@ -79,7 +82,7 @@ const Mainpage = () => {
                             <div className="flex flex-col justify-center gap-3 [&_p]:tracking-wider">
                                 <div>
                                     <Label>Username</Label>
-                                    <p className="text-secondary">{user?.login}</p>
+                                    <p className="text-secondary">{ user?.login }</p>
                                 </div>
                                 <div>
                                     <Label>Member since</Label>

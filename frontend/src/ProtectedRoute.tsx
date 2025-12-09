@@ -55,7 +55,7 @@ const ProtectedRoute = () => {
     }
 
     return isAuth ?
-    <div className="w-dvw h-dvh bg-background">
+    <div className="w-dvw h-dvh">
         <div className="fixed top-0 right-0" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme}
         </div>
